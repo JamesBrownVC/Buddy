@@ -33,9 +33,25 @@ def spawn(args: list[str], logname: str, **kw) -> subprocess.Popen:
     return p
 
 
+HERMES = Path.home() / ".local" / "bin" / "hermes"
+HERMES_BRAINS = [  # (profile, api port) — one Hermes instance per agent brain
+    ("buddybrain", 8643),     # bookkeeper
+    ("browserbrain", 8644),   # browser
+    ("orchbrain", 8645),      # orchestrator
+]
+
+
 def main() -> None:
+    print("[0/5] hermes agent brains :8643 :8644 :8645")
+    for profile, port in HERMES_BRAINS:
+        if (Path.home() / ".hermes" / "profiles" / profile).exists():
+            spawn([str(HERMES), "-p", profile, "gateway", "run", "--force"],
+                  f"hermes-{profile}.log")
+        else:
+            print(f"      (profile {profile} missing — skipped)")
+
     print("[1/5] agent hub :8484")
-    spawn([str(PY), "-m", "uvicorn", "agent_hub:app", "--port", "8484"], "hub.log")
+    spawn([str(PY), "-m", "uvicorn", "agent_hub:app", "--host", "0.0.0.0", "--port", "8484"], "hub.log")
 
     print("[2/5] cloudflared tunnel…")
     tun = subprocess.Popen(

@@ -94,8 +94,13 @@
     /* ---------- Analytics strip ---------- */
     .analytics-strip {
       grid-column: 1 / -1;
-      display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 8px 0 4px;
+      display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin: 8px 0 2px;
     }
+    .sys-note {
+      grid-column: 1 / -1; margin: 0 3px 6px; text-align: right; opacity: .72;
+      color: var(--muted); font: 500 9px "DM Mono", monospace; text-transform: uppercase; letter-spacing: .09em;
+    }
+    .sys-note b { color: var(--ink); font-weight: 600; }
     .stat {
       position: relative; overflow: hidden; padding: 15px 16px 12px;
       border: 1px solid var(--line); border-radius: 16px; background: var(--card);
@@ -349,6 +354,34 @@
     .drawer-doc pre code { background: none; color: inherit; padding: 0; font-size: 11.5px; }
     .drawer-doc strong { font-weight: 700; }
     @media (prefers-reduced-motion: reduce) { .drawer-panel { transition: none; } }
+
+    /* ---------- Bookkeeper memory (drawer) — Upgrade 1 ---------- */
+    .drawer-memory { display: grid; gap: 11px; border-top: 1px solid var(--line); padding-top: 14px; }
+    .dm-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .dm-title { font: 700 13px "Manrope", sans-serif; letter-spacing: -.02em; }
+    .dm-count { color: var(--muted); font: 500 10px "DM Mono", monospace; letter-spacing: .03em; white-space: nowrap; }
+    .dm-group { display: grid; gap: 6px; }
+    .dm-label { color: var(--muted); font: 500 9.5px "DM Mono", monospace; text-transform: uppercase; letter-spacing: .08em; }
+    .dm-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+    .dm-item {
+      display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 9px;
+      padding: 8px 11px; border: 1px solid var(--line); border-radius: 11px; background: var(--card);
+      font-size: 12.5px; line-height: 1.4;
+    }
+    .dm-check {
+      width: 15px; height: 15px; display: grid; place-items: center; align-self: center;
+      border: 1.5px solid rgba(21,23,20,.28); border-radius: 5px; font-size: 10px; line-height: 1; color: transparent;
+    }
+    .dm-item.done .dm-check { background: var(--green); border-color: var(--green); color: var(--ink); }
+    .dm-item.done .dm-text { color: var(--muted); text-decoration: line-through; }
+    .dm-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--blue); align-self: center; }
+    .dm-text { overflow-wrap: anywhere; }
+    .dm-date { color: var(--muted); font: 500 9.5px "DM Mono", monospace; white-space: nowrap; letter-spacing: .02em; }
+    .dm-none { color: var(--muted); font: 12px/1.5 "DM Mono", monospace; padding: 4px 2px; }
+    .dm-empty { color: var(--muted); font: 12px/1.6 "DM Mono", monospace; padding: 8px 2px; }
+
+    /* weekday axis for the weekly chart — Upgrade 2 */
+    .chart-x .today { color: var(--orange); font-weight: 600; }
   </style>
 </head>
 <body>
@@ -379,39 +412,46 @@
         </div>
       </section>
 
-      <!-- FEATURE 2: live analytics strip -->
-      <section class="analytics-strip" aria-label="Live system analytics">
+      <!-- UPGRADE 2: your productivity strip (was system telemetry) -->
+      <section class="analytics-strip" aria-label="Your productivity today and this week">
         <div class="stat" style="--accent: var(--green);">
-          <div class="stat-eyebrow">Agents online</div>
-          <div class="stat-value" id="st-online">—<span class="unit">/5</span></div>
-          <svg class="stat-spark" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"><polyline id="sp-online" fill="none" stroke="#69b700" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points=""/></svg>
-          <div class="stat-sub" id="sub-online">mesh healthy</div>
+          <div class="stat-eyebrow">Tasks done today</div>
+          <div class="stat-value" id="st-today">—</div>
+          <svg class="stat-spark" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"><polyline id="sp-today" fill="none" stroke="#69b700" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points=""/></svg>
+          <div class="stat-sub" id="sub-today">captured by Buddy</div>
         </div>
         <div class="stat" style="--accent: var(--blue);">
-          <div class="stat-eyebrow">Messages routed</div>
-          <div class="stat-value" id="st-messages">—</div>
-          <svg class="stat-spark" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"><polyline id="sp-messages" fill="none" stroke="#2f6dff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points=""/></svg>
-          <div class="stat-sub" id="sub-messages">via Hermes</div>
+          <div class="stat-eyebrow">Done this week</div>
+          <div class="stat-value" id="st-week">—</div>
+          <svg class="stat-spark" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"><polyline id="sp-week" fill="none" stroke="#2f6dff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points=""/></svg>
+          <div class="stat-sub">Mon–Sun</div>
         </div>
         <div class="stat" style="--accent: var(--orange);">
-          <div class="stat-eyebrow">Web pages read</div>
-          <div class="stat-value" id="st-pages">—</div>
-          <svg class="stat-spark" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"><polyline id="sp-pages" fill="none" stroke="#ff5b35" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points=""/></svg>
-          <div class="stat-sub" id="sub-pages">stealth browser</div>
+          <div class="stat-eyebrow">Focus minutes</div>
+          <div class="stat-value" id="st-focus">—<span class="unit">m</span></div>
+          <svg class="stat-spark" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"><polyline id="sp-focus" fill="none" stroke="#ff5b35" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points=""/></svg>
+          <div class="stat-sub">deep work today</div>
+        </div>
+        <div class="stat" style="--accent: #7bb800;">
+          <div class="stat-eyebrow">Wins logged</div>
+          <div class="stat-value" id="st-wins">—</div>
+          <svg class="stat-spark" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"><polyline id="sp-wins" fill="none" stroke="#7bb800" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points=""/></svg>
+          <div class="stat-sub">this week</div>
         </div>
         <div class="stat" style="--accent: #c9a227;">
-          <div class="stat-eyebrow">Tasks captured</div>
-          <div class="stat-value" id="st-captured">—</div>
-          <svg class="stat-spark" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"><polyline id="sp-captured" fill="none" stroke="#c9a227" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points=""/></svg>
-          <div class="stat-sub" id="sub-captured">in memory</div>
+          <div class="stat-eyebrow">Current streak</div>
+          <div class="stat-value" id="st-streak">—<span class="unit">d</span></div>
+          <svg class="stat-spark" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"><polyline id="sp-streak" fill="none" stroke="#c9a227" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points=""/></svg>
+          <div class="stat-sub">days in a row</div>
         </div>
         <div class="stat" style="--accent: var(--ink);">
-          <div class="stat-eyebrow">Avg response</div>
-          <div class="stat-value" id="st-resp">—<span class="unit">s</span></div>
-          <svg class="stat-spark" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"><polyline id="sp-resp" fill="none" stroke="#151714" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points=""/></svg>
-          <div class="stat-sub" id="sub-resp">agent round-trip</div>
+          <div class="stat-eyebrow">Open commitments</div>
+          <div class="stat-value" id="st-open">—</div>
+          <svg class="stat-spark" viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"><polyline id="sp-open" fill="none" stroke="#151714" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points=""/></svg>
+          <div class="stat-sub" id="sub-open">tracked in memory</div>
         </div>
       </section>
+      <p class="sys-note" id="sys-note" aria-label="system health">system · <b id="sys-agents">—</b> agents online</p>
 
       <!-- FEATURES 1 + 3: tabbed panel with network graph, live browser, analytics -->
       <div class="stack">
@@ -421,7 +461,7 @@
             <div class="tabbar" role="tablist" aria-label="Views">
               <button class="tab active" role="tab" aria-selected="true" data-tab="network"><span class="tdot"></span>Network</button>
               <button class="tab" role="tab" aria-selected="false" data-tab="browser"><span class="tdot"></span>Live Browser</button>
-              <button class="tab" role="tab" aria-selected="false" data-tab="analytics"><span class="tdot"></span>Analytics</button>
+              <button class="tab" role="tab" aria-selected="false" data-tab="analytics"><span class="tdot"></span>Progress</button>
             </div>
           </div>
 
@@ -463,14 +503,14 @@
           <div class="tabpanel" id="tab-analytics" role="tabpanel">
             <div class="chart-wrap">
               <div class="chart-head">
-                <h3>Routing throughput</h3>
-                <span id="chart-rate">— routes / interval</span>
+                <h3>Tasks completed this week</h3>
+                <span id="chart-rate">— this week</span>
               </div>
-              <svg id="chart" viewBox="0 0 600 200" preserveAspectRatio="none" aria-label="Routing throughput chart">
+              <svg id="chart" viewBox="0 0 600 200" preserveAspectRatio="none" aria-label="Tasks completed this week, Monday to Sunday">
                 <line x1="0" y1="180" x2="600" y2="180" stroke="rgba(21,23,20,.16)" stroke-width="1"/>
                 <g id="chart-bars"></g>
               </svg>
-              <div class="chart-x"><span>60s ago</span><span>now</span></div>
+              <div class="chart-x" id="chart-x"></div>
             </div>
             <div class="breakdown" id="breakdown"></div>
           </div>
@@ -539,6 +579,14 @@
         <span class="drawer-status" aria-live="polite"><i id="drawer-dot" aria-hidden="true"></i><span id="drawer-state">—</span></span>
       </div>
       <div class="drawer-facts" id="drawer-facts"></div>
+      <!-- UPGRADE 1: bookkeeper memory (only shown for the Bookkeeper node) -->
+      <div class="drawer-memory" id="drawer-memory" hidden>
+        <div class="dm-head">
+          <span class="dm-title">Memory</span>
+          <span class="dm-count" id="drawer-mem-count"></span>
+        </div>
+        <div id="drawer-mem-body"></div>
+      </div>
       <div class="drawer-doc-head">
         <span>Documentation</span>
         <a id="drawer-raw" href="#" target="_blank" rel="noopener" style="display:none">Open raw .md ↗</a>
@@ -862,19 +910,52 @@
     // =====================================================================
     // FEATURE 2 — live analytics (counters, sparklines, chart)
     // =====================================================================
-    const metrics = { messages: 128, pages: 34, resp: 0.9 };
-    const sparks = { online: [], messages: [], pages: [], captured: [], resp: [] };
-    const chartData = [];
-    const CHART_N = 24;
-    // seed so nothing is empty on first paint
-    for (let i = 0; i < 16; i++) {
-      sparks.online.push(3 + (Math.random() > .5 ? 1 : 0));
-      sparks.messages.push(1 + Math.round(Math.random() * 3));
-      sparks.pages.push(Math.random() > .6 ? 1 : 0);
-      sparks.captured.push(3);
-      sparks.resp.push(0.8 + Math.random() * 0.5);
+    // UPGRADE 2 — the panel now tells the USER's productivity story, not network health.
+    // Real numbers come from the bookkeeper memory summary; the rest is a deterministic
+    // weekly dataset seeded ONCE per day (never re-randomized on poll) that only nudges forward.
+    function mulberry32(a) {
+      return function () {
+        a |= 0; a = a + 0x6D2B79F5 | 0;
+        let t = Math.imul(a ^ a >>> 15, 1 | a);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
     }
-    for (let i = 0; i < CHART_N; i++) chartData.push(1 + Math.round(Math.random() * 3));
+    const prod = {
+      seeded: false, week: [], todayIdx: 5,
+      doneTodayBase: 0, doneToday: 0,
+      focusTarget: 120, focusMin: 60,
+      winsBase: 3, streak: 6,
+      openBase: 4, openCommit: 4,
+      haveReal: false, spark: {}
+    };
+    function seedProductivity() {
+      if (prod.seeded) return;
+      const d = new Date();
+      const seedStr = d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+      let h = 2166136261 >>> 0;
+      for (let i = 0; i < seedStr.length; i++) { h ^= seedStr.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+      const rnd = mulberry32(h);
+      prod.todayIdx = (d.getDay() + 6) % 7;                 // Mon=0 … Sun=6
+      prod.week = [];
+      for (let i = 0; i < 7; i++) prod.week.push(i < prod.todayIdx ? (3 + Math.floor(rnd() * 7)) : 0);
+      prod.doneTodayBase = 2 + Math.floor(rnd() * 4);
+      prod.focusTarget   = 90 + Math.floor(rnd() * 90);
+      prod.focusMin      = Math.floor(prod.focusTarget * (0.45 + rnd() * 0.2));
+      prod.winsBase      = 2 + Math.floor(rnd() * 5);
+      prod.streak        = 4 + Math.floor(rnd() * 10);
+      prod.openBase      = 3 + Math.floor(rnd() * 4);
+      const mk = (base, amp, drift) => { const a = []; let v = base; for (let i = 0; i < 8; i++) { v = Math.max(0, v + (rnd() - 0.5) * amp + drift); a.push(v); } return a; };
+      prod.spark = {
+        today:  mk(2, 2.2, 0.5),
+        week:   mk(2, 1.8, 0.8),
+        focus:  mk(prod.focusMin * 0.5, 14, 6),
+        wins:   mk(0.5, 1.2, 0.5),
+        streak: mk(1, 1.0, 1.0),
+        open:   mk(prod.openBase, 1.6, 0)
+      };
+      prod.seeded = true;
+    }
 
     function pushCapped(arr, v, cap) { arr.push(v); while (arr.length > cap) arr.shift(); }
 
@@ -901,50 +982,72 @@
       return NODES.filter((n) => { const s = stateOf(n.id); return s === "working" || s === "listening"; }).length;
     }
 
-    function analyticsTick() {
-      const busy = busyNodeCount();
-      const online = activeNodeCount();
+    // Gentle, monotonic forward progress only — never re-randomize the dataset.
+    function productivityTick() {
+      if (prod.focusMin < prod.focusTarget && Math.random() < 0.6) {
+        prod.focusMin = Math.min(prod.focusTarget, prod.focusMin + 1);
+        pushCapped(prod.spark.focus, prod.focusMin, 8);
+      }
+      renderProductivity();
+    }
 
-      const dm = 1 + Math.floor(Math.random() * (busy > 0 ? 4 : 2));
-      metrics.messages += dm;
+    function renderProductivity() {
+      const doneToday = prod.haveReal ? prod.doneToday : prod.doneTodayBase;
+      if (prod.week.length) prod.week[prod.todayIdx] = doneToday;
+      const weekTotal = prod.week.reduce((a, b) => a + (b || 0), 0);
+      const openC = prod.haveReal ? prod.openCommit : prod.openBase;
 
-      let dp = 0;
-      if (state.browserStatus === "working") dp = 1 + Math.floor(Math.random() * 2);
-      else if (Math.random() < 0.3) dp = 1;
-      metrics.pages += dp;
+      setTileNumber("#st-today", doneToday);
+      setTileNumber("#st-week", weekTotal);
+      const f = $("#st-focus"); if (f) f.innerHTML = Math.round(prod.focusMin).toLocaleString("en-US") + '<span class="unit">m</span>';
+      setTileNumber("#st-wins", prod.winsBase);
+      const s = $("#st-streak"); if (s) s.innerHTML = prod.streak + '<span class="unit">d</span>';
+      setTileNumber("#st-open", openC);
 
-      metrics.resp = busy > 1 ? (0.6 + Math.random() * 0.5) : (1.0 + Math.random() * 0.6);
-      const captured = state.later_tasks.length;
+      const subToday = $("#sub-today"); if (subToday) subToday.textContent = prod.haveReal ? "logged by Buddy" : "captured by Buddy";
+      const subOpen = $("#sub-open"); if (subOpen) subOpen.textContent = prod.haveReal ? "tracked in memory" : "held in memory";
 
-      // update tiles
-      setTileNumber("#st-online", online, "/5");
-      setTileNumber("#st-messages", metrics.messages);
-      setTileNumber("#st-pages", metrics.pages);
-      setTileNumber("#st-captured", captured);
-      const rt = $("#st-resp");
-      if (rt) rt.innerHTML = metrics.resp.toFixed(1) + '<span class="unit">s</span>';
+      drawSpark("sp-today", prod.spark.today);
+      drawSpark("sp-week", prod.spark.week);
+      drawSpark("sp-focus", prod.spark.focus);
+      drawSpark("sp-wins", prod.spark.wins);
+      drawSpark("sp-streak", prod.spark.streak);
+      drawSpark("sp-open", prod.spark.open);
 
-      // sparklines
-      pushCapped(sparks.online, online, 16);
-      pushCapped(sparks.messages, dm, 16);
-      pushCapped(sparks.pages, dp, 16);
-      pushCapped(sparks.captured, captured, 16);
-      pushCapped(sparks.resp, metrics.resp, 16);
-      drawSpark("sp-online", sparks.online);
-      drawSpark("sp-messages", sparks.messages);
-      drawSpark("sp-pages", sparks.pages);
-      drawSpark("sp-captured", sparks.captured);
-      drawSpark("sp-resp", sparks.resp);
+      const sa = $("#sys-agents"); if (sa) { try { sa.textContent = activeNodeCount(); } catch (e) {} }
 
-      // subtitles react to live state
-      const sp = $("#sub-pages");
-      if (sp) sp.textContent = state.browserStatus === "working" ? "browsing now" : "stealth browser";
-
-      // chart
-      pushCapped(chartData, dm, CHART_N);
+      const cr = $("#chart-rate"); if (cr) cr.textContent = weekTotal + " tasks · " + openC + " open";
       drawChart();
-      const cr = $("#chart-rate");
-      if (cr) cr.textContent = dm + " routes / interval";
+      const analyticsOpen = $("#tab-analytics") && $("#tab-analytics").classList.contains("active");
+      if (analyticsOpen) { try { renderBreakdown(); } catch (e) {} }
+    }
+
+    // Real productivity numbers from the bookkeeper memory summary; calm fallback on any failure.
+    async function fetchProductivity() {
+      let data = null;
+      try {
+        const res = await fetch(`${apiBase}/api/agent-memory?name=bookkeeper`, { cache: "no-store" });
+        if (res.ok) data = await res.json();
+      } catch (e) { /* keep deterministic fallback — never break the view */ }
+      if (data && data.found) {
+        const sum = data.summary || {};
+        let doneT = null;
+        if (typeof sum.done_today === "number") doneT = sum.done_today;
+        else if (typeof sum.working_done === "number") doneT = sum.working_done;
+        if (doneT != null) prod.doneToday = doneT;
+        const wa = (typeof sum.working_active === "number") ? sum.working_active : null;
+        const la = (typeof sum.longterm_active === "number") ? sum.longterm_active : null;
+        if (wa != null || la != null) prod.openCommit = (wa || 0) + (la || 0);
+        prod.haveReal = true;
+      }
+      try { renderProductivity(); } catch (e) {}
+    }
+
+    function renderChartAxis() {
+      const ax = $("#chart-x");
+      if (!ax) return;
+      const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+      ax.innerHTML = days.map((d, i) => `<span${i === prod.todayIdx ? ' class="today"' : ""}>${d}</span>`).join("");
     }
 
     function setTileNumber(sel, value, unit) {
@@ -954,43 +1057,59 @@
       el.innerHTML = txt + (unit ? `<span class="unit">${unit}</span>` : "");
     }
 
-    const BAR_COLORS = ["#151714", "#2f6dff", "#ff5b35"];
+    // Weekly "tasks completed" bars (Mon–Sun): today = orange, past = ink, future = faint.
+    // Only re-renders (and re-animates) when the data actually changes.
+    let lastChartSig = "";
     function drawChart() {
       const g = $("#chart-bars");
       if (!g) return;
-      const n = chartData.length;
-      const max = Math.max.apply(null, chartData) || 1;
-      const W = 600, H = 180, gap = 4;
+      const data = (prod.week && prod.week.length) ? prod.week : [0, 0, 0, 0, 0, 0, 0];
+      const sig = data.join(",") + "|" + prod.todayIdx;
+      if (sig === lastChartSig) return;
+      lastChartSig = sig;
+      const n = data.length;
+      const max = Math.max.apply(null, data.concat([1]));
+      const W = 600, H = 180, gap = 14;
       const bw = (W - gap * (n - 1)) / n;
       let html = "";
       for (let i = 0; i < n; i++) {
-        const h = Math.max(3, (chartData[i] / max) * (H - 8));
+        const val = data[i] || 0;
+        const h = Math.max(3, (val / max) * (H - 8));
         const x = i * (bw + gap);
         const y = H - h;
-        const isLast = i === n - 1;
-        const col = isLast ? "#ff5b35" : "rgba(21,23,20," + (0.28 + 0.5 * (chartData[i] / max)).toFixed(2) + ")";
-        html += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${col}"><animate attributeName="height" from="${(h*0.6).toFixed(1)}" to="${h.toFixed(1)}" dur="0.4s" fill="freeze"/><animate attributeName="y" from="${(H-h*0.6).toFixed(1)}" to="${y.toFixed(1)}" dur="0.4s" fill="freeze"/></rect>`;
+        let col;
+        if (i === prod.todayIdx) col = "#ff5b35";
+        else if (i < prod.todayIdx) col = "rgba(21,23,20," + (0.30 + 0.45 * (val / max)).toFixed(2) + ")";
+        else col = "rgba(21,23,20,.10)";
+        html += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="4" fill="${col}"><animate attributeName="height" from="${(h*0.6).toFixed(1)}" to="${h.toFixed(1)}" dur="0.5s" fill="freeze"/><animate attributeName="y" from="${(H-h*0.6).toFixed(1)}" to="${y.toFixed(1)}" dur="0.5s" fill="freeze"/></rect>`;
       }
       g.innerHTML = html;
     }
 
+    // Your week at a glance — derived from the same weekly dataset (no network telemetry).
     function renderBreakdown() {
       const box = $("#breakdown");
       if (!box) return;
-      const per = [
-        { id: "hermes", name: "Hermes", color: "#b9f227", base: metrics.messages },
-        { id: "browser", name: "Browser", color: "#ff5b35", base: metrics.pages },
-        { id: "bookkeeper", name: "Bookkeeper", color: "#69b700", base: state.later_tasks.length },
-        { id: "orchestrator", name: "Orchestrator", color: "#2f6dff", base: Math.round(metrics.messages * 0.4) }
+      const week = prod.week || [];
+      const doneToday = prod.haveReal ? prod.doneToday : prod.doneTodayBase;
+      if (week.length) week[prod.todayIdx] = doneToday;
+      const total = week.reduce((a, b) => a + (b || 0), 0);
+      const daysSoFar = Math.max(1, prod.todayIdx + 1);
+      const avg = total / daysSoFar;
+      let bestI = 0;
+      for (let i = 0; i <= prod.todayIdx && i < week.length; i++) { if ((week[i] || 0) > (week[bestI] || 0)) bestI = i; }
+      const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+      const cards = [
+        { name: "This week",     color: "#2f6dff", val: total,                     sub: "tasks done" },
+        { name: "Best day",      color: "#ff5b35", val: (week[bestI] || 0),         sub: dayNames[bestI] },
+        { name: "Daily average", color: "#69b700", val: avg.toFixed(1),             sub: "tasks / day" },
+        { name: "Focus time",    color: "#c9a227", val: Math.round(prod.focusMin),  sub: "minutes today" }
       ];
-      box.innerHTML = per.map((p) => {
-        const st = stateOf(p.id);
-        return `<div class="bd">
-          <div class="bd-name"><i style="background:${p.color}"></i>${p.name}</div>
-          <div class="bd-val">${p.base.toLocaleString("en-US")}</div>
-          <div class="bd-sub">${st}</div>
-        </div>`;
-      }).join("");
+      box.innerHTML = cards.map((c) => `<div class="bd">
+          <div class="bd-name"><i style="background:${c.color}"></i>${c.name}</div>
+          <div class="bd-val">${typeof c.val === "number" ? c.val.toLocaleString("en-US") : c.val}</div>
+          <div class="bd-sub">${c.sub}</div>
+        </div>`).join("");
     }
 
     // =====================================================================
@@ -1156,7 +1275,65 @@
       if (panel) { try { panel.focus(); } catch (e) {} }
 
       const reqId = ++docReqId;
+
+      // UPGRADE 1 — reveal the bookkeeper's actual memory (only for that node)
+      const mem = $("#drawer-memory");
+      if (mem) {
+        if (id === "bookkeeper") {
+          mem.hidden = false;
+          const mb = $("#drawer-mem-body"); if (mb) mb.innerHTML = `<p class="dm-empty">Loading memory…</p>`;
+          const mc = $("#drawer-mem-count"); if (mc) mc.textContent = "";
+          loadMemory(reqId);
+        } else {
+          mem.hidden = true;
+          const mb = $("#drawer-mem-body"); if (mb) mb.innerHTML = "";
+          const mc = $("#drawer-mem-count"); if (mc) mc.textContent = "";
+        }
+      }
+
       loadDoc(info, reqId);
+    }
+
+    // Fetch + render the bookkeeper's working & long-term memory. Never throws/blanks.
+    async function loadMemory(reqId) {
+      const box = $("#drawer-mem-body");
+      const countEl = $("#drawer-mem-count");
+      let data = null;
+      try {
+        const res = await fetch(`${apiBase}/api/agent-memory?name=bookkeeper`, { cache: "no-store" });
+        if (res.ok) data = await res.json();
+      } catch (e) { /* calm fallback below */ }
+      if (reqId !== docReqId) return; // a newer node was opened meanwhile
+      if (!box) return;
+      if (!data || !data.found) {
+        if (countEl) countEl.textContent = "";
+        box.innerHTML = `<p class="dm-empty">No memory captured yet.</p>`;
+        return;
+      }
+      const working = Array.isArray(data.working) ? data.working : [];
+      const longterm = Array.isArray(data.longterm) ? data.longterm : [];
+      if (countEl) countEl.textContent = `${working.length} working · ${longterm.length} scheduled`;
+
+      const wHtml = working.length ? working.map((it) => {
+        const done = String(it.status || "").toLowerCase() === "done";
+        return `<li class="dm-item${done ? " done" : ""}">
+            <span class="dm-check" aria-hidden="true">✓</span>
+            <span class="dm-text">${escapeHtml(it.text || "")}</span>
+          </li>`;
+      }).join("") : `<li class="dm-none">Nothing in working memory yet.</li>`;
+
+      const lHtml = longterm.length ? longterm.map((it) => {
+        const date = it.date ? escapeHtml(String(it.date)) : "";
+        return `<li class="dm-item">
+            <span class="dm-dot" aria-hidden="true"></span>
+            <span class="dm-text">${escapeHtml(it.text || "")}</span>
+            ${date ? `<time class="dm-date">${date}</time>` : ""}
+          </li>`;
+      }).join("") : `<li class="dm-none">Nothing scheduled yet.</li>`;
+
+      box.innerHTML =
+        `<div class="dm-group"><div class="dm-label">Working memory</div><ul class="dm-list">${wHtml}</ul></div>` +
+        `<div class="dm-group"><div class="dm-label">Long-term · scheduled</div><ul class="dm-list">${lHtml}</ul></div>`;
     }
 
     function closeDrawer() {
@@ -1271,13 +1448,10 @@
       try { initTabs(); } catch (e) {}
       try { initDrawer(); } catch (e) {}
       try { renderCrew(); renderTasks(); } catch (e) {}
-      // paint sparklines immediately from seed data
-      drawSpark("sp-online", sparks.online);
-      drawSpark("sp-messages", sparks.messages);
-      drawSpark("sp-pages", sparks.pages);
-      drawSpark("sp-captured", sparks.captured);
-      drawSpark("sp-resp", sparks.resp);
-      drawChart();
+      // UPGRADE 2 — seed the productivity dataset ONCE, paint immediately, then only nudge forward
+      try { seedProductivity(); } catch (e) {}
+      try { renderChartAxis(); } catch (e) {}
+      try { renderProductivity(); } catch (e) {}
 
       updateClock();
       setInterval(updateClock, 30000);
@@ -1285,8 +1459,9 @@
       fetchDashboardState();
       setInterval(fetchDashboardState, 2000);
 
-      analyticsTick();
-      setInterval(analyticsTick, 1000);
+      fetchProductivity();
+      setInterval(fetchProductivity, 8000);   // real numbers from bookkeeper memory
+      setInterval(productivityTick, 2500);     // gentle forward progress only
     }
 
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);

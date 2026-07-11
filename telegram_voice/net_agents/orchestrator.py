@@ -52,7 +52,7 @@ HUB = os.getenv("HERMES_HUB", "http://localhost:8484").rstrip("/")
 SECRET = os.getenv("HERMES_SECRET", os.getenv("HUB_SECRET", ""))
 HEADERS = {"X-Hermes-Secret": SECRET}
 OPENAI_KEY = os.getenv("OPENAI_API_KEY", "")
-MODEL = os.getenv("ORCH_MODEL", "gpt-4o")
+MODEL = os.getenv("ORCH_MODEL", "gpt-5.6-terra")
 USER_WAIT_S = int(os.getenv("ORCH_USER_WAIT", "240"))
 
 STATE = HERE / "state"
@@ -160,7 +160,35 @@ def llm(messages: list[dict], tools: list[dict] | None = None,
         messages = [{"role": "system",
                      "content": PERSONAL_CONTEXT + "\n\n" + messages[0]["content"]},
                     *messages[1:]]
-    body: dict = {"model": MODEL, "temperature": 0.3, "messages": messages}
+    # PRIMARY for plain-text turns: this agent's own Hermes instance
+    # (orchbrain, :8645 — key in state/orchbrain.key). Tool-calling and
+    # strict-JSON turns go direct to gpt-5.6-terra (Hermes' OpenAI-compatible
+    # server runs its own agent loop and doesn't pass through client tools).
+    if not tools and not force_json:
+        try:
+            _key = os.getenv("ORCH_BRAIN_KEY") or open(
+                os.path.join(os.path.dirname(__file__), "..", "state",
+                             "orchbrain.key")).read().strip()
+            r = httpx.post(
+                os.getenv("ORCH_BRAIN_URL", "http://127.0.0.1:8645/v1")
+                + "/chat/completions",
+                headers={"Authorization": f"Bearer {_key}"},
+                json={"model": "hermes-agent", "messages": messages,
+                      "max_tokens": 2048},
+                timeout=18)
+            r.raise_for_status()
+            m = r.json()["choices"][0]["message"]
+            if (m.get("content") or "").strip():
+                log.info("orchestrator llm via hermes")
+                return m
+        except Exception as e:
+            log.warning("orchestrator hermes failed (%s); falling back", e)
+
+    body: dict = {"model": MODEL, "messages": messages}
+    if str(MODEL).startswith("gpt-5"):
+        body["reasoning_effort"] = "none"   # gpt-5.6: required for tool-calling; no temperature
+    else:
+        body["temperature"] = 0.3
     if tools:
         body["tools"] = tools
     if force_json:
@@ -224,14 +252,22 @@ def get_task(task_id: str) -> dict | None:
 
 
 def ledger_digest() -> str:
-    tasks = _load()
+    try:
+        tasks = _load()
+    except Exception as e:
+        log.warning("ledger load failed: %s", e)
+        return "No tasks yet."
     if not tasks:
         return "No tasks yet."
     lines = []
     for t in tasks[-12:]:
-        lines.append(f"[{t['id']}] {t['status']:>12} :: {t['request'][:80]} "
-                     f"(from {t['from']})")
-        if t["status"] == "waiting_user" and t.get("question"):
+        # tolerate legacy/partial task records missing any field
+        tid = t.get("id", "?")
+        status = str(t.get("status", "?"))
+        request = str(t.get("request", ""))[:80]
+        frm = t.get("from") or t.get("from_") or "?"
+        lines.append(f"[{tid}] {status:>12} :: {request} (from {frm})")
+        if t.get("status") == "waiting_user" and t.get("question"):
             lines.append(f"          waiting on user: {t['question']}")
     return "\n".join(lines)
 

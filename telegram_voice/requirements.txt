@@ -1,0 +1,19 @@
+# Buddy — Python dependencies (Python 3.11)
+# Core web / agent services
+fastapi==0.139.0
+uvicorn==0.51.0
+httpx==0.28.1
+pydantic==2.13.4
+python-dotenv==1.0.1
+certifi==2026.6.17
+
+# Telegram voice bridge
+python-telegram-bot==22.8
+
+# Speech: local STT (Whisper) + free TTS (Edge)
+faster-whisper==1.2.1
+edge-tts==7.2.8
+
+# Voice-mode extras (optional; CLI push-to-talk)
+sounddevice==0.5.5
+numpy==2.4.6

@@ -24,6 +24,7 @@ import json
 import logging
 import os
 import re
+import urllib.parse
 from pathlib import Path
 
 import httpx
@@ -148,29 +149,12 @@ def ddg_search(query: str, n: int = 5) -> list[dict]:
 def condense(question: str, results: list[dict]) -> str:
     listing = "\n".join(f"- {r['title']}: {r['snippet']} ({r['url']})"
                         for r in results)
-    if not OPENAI_KEY:
-        return f"Top results for '{question}':\n{listing}"
-    try:
-        r = httpx.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {OPENAI_KEY}"},
-            json={"model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-                  "temperature": 0.2, "max_tokens": 220,
-                  "messages": [
-                      {"role": "system", "content":
-                       "You are the Browser agent (fallback search mode). "
-                       "Answer the question from the search results in 2-4 "
-                       "plain sentences, then one line 'source: <best url>'. "
-                       "If the results don't answer it, say so."},
-                      {"role": "user", "content":
-                       f"Question: {question}\n\nSearch results:\n{listing}"}]},
-            timeout=60,
-        )
-        r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        log.warning("condense failed: %s", e)
-        return f"Top results for '{question}':\n{listing}"
+    reply = _chain_chat(
+        "You are the Browser agent (fallback search mode). Answer the "
+        "question from the search results in 2-4 plain sentences, then one "
+        "line 'source: <best url>'. If the results don't answer it, say so.",
+        f"Question: {question}\n\nSearch results:\n{listing}")
+    return reply or f"Top results for '{question}':\n{listing}"
 
 
 def fallback_search(q: str) -> str:
@@ -188,13 +172,88 @@ class Ask(BaseModel):
     message: str
 
 
+# PRIMARY: this agent's own Hermes instance (browserbrain, :8644).
+# FALLBACK: direct gpt-5.6-terra. Short Hermes timeout keeps voice calls snappy.
+LLM_BACKENDS = [
+    {"name": "hermes", "base": os.getenv("BROWSER_BRAIN_URL", "http://127.0.0.1:8644/v1"),
+     "key": os.getenv("BROWSER_BRAIN_KEY", "browserbrain-local"),
+     "model": "hermes-agent", "gpt5": False, "timeout": 18},
+    {"name": "terra", "base": "https://api.openai.com/v1",
+     "key": OPENAI_KEY, "model": "gpt-5.6-terra", "gpt5": True, "timeout": 30},
+]
+
+_CONDENSE_SYSTEM = (
+    "You are the Browser agent. From the text of a web search-results page, "
+    "answer the user's question in 2-4 plain spoken sentences, then one line "
+    "'source: <best url>'. If the text is thin, give the best summary you "
+    "can — never say you failed."
+)
+
+
+def _chain_chat(system: str, user: str, max_out: int = 220) -> str | None:
+    """Hermes-primary, terra-fallback chat call shared by condense paths."""
+    for b in LLM_BACKENDS:
+        if not b["key"]:
+            continue
+        body = {"model": b["model"],
+                "messages": [{"role": "system", "content": system},
+                             {"role": "user", "content": user}]}
+        if b["gpt5"]:
+            body["reasoning_effort"] = "none"
+            body["max_completion_tokens"] = max_out
+        else:
+            body["max_tokens"] = max_out       # Hermes: standard fields only
+        try:
+            r = httpx.post(f"{b['base']}/chat/completions",
+                           headers={"Authorization": f"Bearer {b['key']}"},
+                           json=body, timeout=b["timeout"])
+            r.raise_for_status()
+            content = (r.json()["choices"][0]["message"].get("content") or "").strip()
+            if content:
+                log.info("browser llm via %s", b["name"])
+                return content
+        except Exception as e:
+            log.warning("browser %s failed (%s); trying next", b["name"], e)
+    return None
+
+
+def condense_text(question: str, text: str, url: str) -> str:
+    """Turn a fetched page's text into a short sourced answer."""
+    if not text:
+        return f"I looked that up — see {url}"
+    reply = _chain_chat(_CONDENSE_SYSTEM,
+                        f"Question: {question}\n\nPage text:\n{text}")
+    return reply or f"I searched '{question}' — see {url}"
+
+
+def container_lookup(q: str) -> str:
+    """Deterministic, VISIBLE lookup: drive the real (stealth) browser to a
+    search-results page, read it, condense. No LLM tab-management loop, so it
+    never gets stuck 'opening a new tab' on the 2nd+ call — and it always shows
+    on the live noVNC screen."""
+    url = "https://duckduckgo.com/html/?q=" + urllib.parse.quote(q)
+    browser_action({"action": "goto", "url": url, "wait_until": "domcontentloaded"})
+    raw = browser_action({"action": "get_text"})
+    try:
+        page = json.loads(raw)
+        text = (page.get("data") or {}).get("text") or ""
+    except Exception:
+        text = raw or ""
+    text = re.sub(r"[ \t]+", " ", re.sub(r"\n{2,}", "\n", text)).strip()[:6000]
+    return condense_text(q, text, url)
+
+
 @app.post("/ask")
 def ask(a: Ask) -> dict:
     q = a.message.strip()
     if container_up():
-        log.info("container task: %s", q[:120])
-        return {"reply": run_container_task(q)}
-    log.info("fallback lookup (container down): %s", q[:120])
+        log.info("visible lookup: %s", q[:120])
+        try:
+            return {"reply": container_lookup(q)}
+        except Exception as e:
+            log.warning("container lookup failed (%s); using text fallback", e)
+    else:
+        log.info("fallback lookup (container down): %s", q[:120])
     return {"reply": fallback_search(q)}
 
 

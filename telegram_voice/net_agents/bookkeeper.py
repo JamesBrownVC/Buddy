@@ -60,9 +60,9 @@ BROWSER_URL = os.getenv("BROWSER_URL", "http://localhost:9103/ask")
 MY_URL = os.getenv("BOOKKEEPER_URL", "http://localhost:9102").rstrip("/")
 # LLM endpoint — defaults point at the LOCAL Hermes instance (OpenAI-compatible
 # gateway) so the book-keeper literally brains on Hermes, not OpenAI.
-BOOKKEEPER_BASE_URL = os.getenv("BOOKKEEPER_BASE_URL", "http://127.0.0.1:8643/v1").rstrip("/")
+BOOKKEEPER_BASE_URL = os.getenv("BOOKKEEPER_BASE_URL", "https://api.openai.com/v1").rstrip("/")
 BOOKKEEPER_KEY = os.getenv("BOOKKEEPER_API_KEY") or os.getenv("OPENAI_API_KEY") or "buddybrain-local"
-MODEL = os.getenv("BOOKKEEPER_MODEL", "hermes-agent")
+MODEL = os.getenv("BOOKKEEPER_MODEL", "gpt-5.6-terra")
 
 STATE = HERE / "state"
 STATE.mkdir(exist_ok=True)
@@ -134,28 +134,47 @@ def digest(db: dict) -> str:
 
 
 # ── LLM ────────────────────────────────────────────────────────────────
+# PRIMARY: the local Hermes instance (:8643). FALLBACK: direct gpt-5.6-terra.
+# Hermes gets a short timeout so a slow agent-loop fails fast to the fast
+# fallback — keeps replies inside the ElevenLabs webhook window during a call.
+_OPENAI_KEY = os.getenv("OPENAI_API_KEY", "")
+LLM_BACKENDS = [
+    {"name": "hermes",  "base": "http://127.0.0.1:8643/v1",
+     "key": "buddybrain-local", "model": "hermes-agent",
+     "gpt5": False, "timeout": 18},
+    {"name": "terra",   "base": "https://api.openai.com/v1",
+     "key": _OPENAI_KEY, "model": "gpt-5.6-terra",
+     "gpt5": True, "timeout": 30},
+]
+
+
 def llm(system: str, user: str) -> str | None:
-    if not BOOKKEEPER_KEY:
-        return None
     if PERSONAL_CONTEXT:
         system = PERSONAL_CONTEXT + "\n\n" + system
-    # NOTE: Hermes rejects non-standard params (e.g. reasoning_effort,
-    # response_format). Send ONLY standard chat fields. The system prompts
-    # already instruct the model to respond with pure JSON.
-    try:
-        r = httpx.post(
-            f"{BOOKKEEPER_BASE_URL}/chat/completions",
-            headers={"Authorization": f"Bearer {BOOKKEEPER_KEY}"},
-            json={"model": MODEL, "temperature": 0.2, "max_tokens": 1024,
-                  "messages": [{"role": "system", "content": system},
-                               {"role": "user", "content": user}]},
-            timeout=60,
-        )
-        r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"]
-    except Exception as e:
-        log.warning("llm failed: %s", e)
-        return None
+    messages = [{"role": "system", "content": system},
+                {"role": "user", "content": user}]
+    for b in LLM_BACKENDS:
+        if not b["key"]:
+            continue
+        body = {"model": b["model"], "messages": messages}
+        if b["gpt5"]:
+            body["reasoning_effort"] = "none"        # gpt-5.6 direct
+            body["max_completion_tokens"] = 1024
+        else:
+            body["max_tokens"] = 1024                # Hermes: standard fields only
+        try:
+            r = httpx.post(f"{b['base']}/chat/completions",
+                           headers={"Authorization": f"Bearer {b['key']}"},
+                           json=body, timeout=b["timeout"])
+            r.raise_for_status()
+            content = (r.json()["choices"][0]["message"].get("content") or "").strip()
+            if content:
+                log.info("bookkeeper llm via %s", b["name"])
+                return content
+            log.warning("bookkeeper %s returned empty; trying next", b["name"])
+        except Exception as e:
+            log.warning("bookkeeper %s failed (%s); trying next", b["name"], e)
+    return None
 
 
 ASK_SYSTEM = """You are the Book-keeper agent of a personal-assistant agent

@@ -61,6 +61,7 @@ PUBLIC_PATHS = {
     "/api/dashboard-state",
     "/api/toggle-step",
     "/api/agent-doc",
+    "/api/agent-memory",
 }
 SUBSCRIBERS_FILE = None  # set below after STATE_DIR
 
@@ -603,6 +604,80 @@ def get_agent_doc(name: str = "") -> dict:
     except Exception as e:  # never break the frontend over a bad read
         log.warning("agent-doc read failed for %r: %s", name, e)
         return {"name": name, "found": False, "markdown": ""}
+
+
+@app.get("/api/agent-memory")
+def get_agent_memory(name: str = "") -> dict:
+    """Read-only view of an agent's live stored memory, for the dashboard
+    drawer (so clicking a node can show the bookkeeper's actual items).
+
+    Public + read-only (like /api/dashboard-state). Never 500s: any error
+    returns {"found": False}.
+
+    Security: `name` only selects between a couple of *fixed* known state
+    files — it is never used to build a path — so path traversal is
+    impossible. Only bookkeeper.json / orchestrator_tasks.json are read.
+    """
+    raw = (name or "").strip().lower()
+    net_state_dir = Path(__file__).resolve().parent / "net_agents" / "state"
+    try:
+        if raw in ("bookkeeper", "memory", "book-keeper"):
+            bk_file = net_state_dir / "bookkeeper.json"
+            if not bk_file.is_file():
+                return {"name": "bookkeeper", "found": False}
+            bk_data = json.loads(bk_file.read_text(encoding="utf-8"))
+            raw_working = bk_data.get("working") or []
+            raw_longterm = bk_data.get("longterm") or []
+            working = [
+                {
+                    "text": i.get("text", ""),
+                    "status": i.get("status", "active"),
+                    "created": i.get("created", ""),
+                }
+                for i in raw_working
+            ]
+            longterm = [
+                {
+                    "text": i.get("text", ""),
+                    "status": i.get("status", "active"),
+                    "date": i.get("date") or "",
+                }
+                for i in raw_longterm
+            ]
+            today = dt.date.today().strftime("%Y-%m-%d")
+            done_today = sum(
+                1
+                for i in (raw_working + raw_longterm)
+                if i.get("status") == "done"
+                and str(i.get("created") or "").startswith(today)
+            )
+            summary = {
+                "working_active": sum(1 for i in raw_working if i.get("status") == "active"),
+                "working_done": sum(1 for i in raw_working if i.get("status") == "done"),
+                "longterm_active": sum(1 for i in raw_longterm if i.get("status") == "active"),
+                "done_today": done_today,
+            }
+            return {
+                "name": "bookkeeper",
+                "found": True,
+                "working": working,
+                "longterm": longterm,
+                "summary": summary,
+            }
+        if raw == "orchestrator":
+            orch_file = net_state_dir / "orchestrator_tasks.json"
+            if not orch_file.is_file():
+                return {"name": "orchestrator", "found": False}
+            orch = json.loads(orch_file.read_text(encoding="utf-8")) or []
+            tasks = [
+                {"request": t.get("request", ""), "status": t.get("status", "")}
+                for t in orch
+            ]
+            return {"name": "orchestrator", "found": True, "tasks": tasks}
+        return {"name": name, "found": False}
+    except Exception as e:  # never break the frontend over a bad read
+        log.warning("agent-memory read failed for %r: %s", name, e)
+        return {"name": name, "found": False}
 
 
 @app.get("/health")
