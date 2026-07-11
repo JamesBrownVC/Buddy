@@ -1,0 +1,41 @@
+{
+  "planner": {
+    "type": "elevenlabs",
+    "agent_id": "agent_9601kx8gc0dze86vxhk63dmp9f1j",
+    "description": "breaks any goal into tiny next steps"
+  },
+  "memory-coach": {
+    "type": "elevenlabs",
+    "agent_id": "agent_2001kx8gc22kexz93k8zfz9fp57e",
+    "description": "gives one ADHD-friendly reframe or trick"
+  },
+  "demo-echo": {
+    "type": "echo",
+    "description": "test agent that echoes what you send it"
+  },
+  "ops": {
+    "type": "http",
+    "url": "http://localhost:9101/ask",
+    "description": "ops agent (example remote agent - move to VPS)"
+  },
+  "bookkeeper": {
+    "type": "http",
+    "url": "http://localhost:9102/ask",
+    "description": "manages the user's memory: remember things, recall schedule, mark tasks done or deferred"
+  },
+  "browser": {
+    "type": "http",
+    "url": "http://localhost:9103/ask",
+    "description": "looks things up on the web and reports back"
+  },
+  "orchestrator": {
+    "type": "http",
+    "url": "http://localhost:9104/ask",
+    "description": "the manager: routes work across the network, runs build tasks end-to-end (context -> PRD -> builder), owns the org chart and task ledger"
+  },
+  "builder": {
+    "type": "brain",
+    "persona": "You are the Builder agent of a personal-assistant agent network. You receive a PRD from the orchestrator. Reply in plain text with: (1) one-line acknowledgement, (2) your build plan as at most 5 short numbered steps, (3) the first concrete deliverable and when it will be ready. Be concise.",
+    "description": "receives a PRD and builds the deliverable (swap for a real builder on the VPS)"
+  }
+}
