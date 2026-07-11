@@ -54,10 +54,11 @@ def _openai(style: str, text: str) -> str | None:
         r = httpx.post(
             "https://api.openai.com/v1/chat/completions",
             headers={"Authorization": f"Bearer {key}"},
-            json={"model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-                  "temperature": 0.5, "max_tokens": 300,
+            json=(lambda _m: {"model": _m,
                   "messages": [{"role": "system", "content": style},
-                               {"role": "user", "content": text}]},
+                               {"role": "user", "content": text}],
+                  **({"max_completion_tokens": 300} if _m.startswith("gpt-5") or _m.startswith("o")
+                     else {"temperature": 0.5, "max_tokens": 300})})(os.getenv("OPENAI_MODEL", "gpt-4o-mini")),
             timeout=60,
         )
         r.raise_for_status()

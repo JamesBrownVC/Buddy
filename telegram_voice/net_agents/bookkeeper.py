@@ -20,7 +20,11 @@ complete / defer / questions), and call_ended events from the hub — every
 call summary is scanned for things worth remembering.
 
 Run:  .venv\\Scripts\\python.exe -m uvicorn net_agents.bookkeeper:app --port 9102
-Env:  HERMES_HUB, HERMES_SECRET, OPENAI_API_KEY (falls back to rule-based)
+Env:  HERMES_HUB, HERMES_SECRET. LLM brain (defaults to the local Hermes
+      instance): BOOKKEEPER_BASE_URL (default http://127.0.0.1:8643/v1),
+      BOOKKEEPER_API_KEY (falls back to OPENAI_API_KEY, default
+      "buddybrain-local"), BOOKKEEPER_MODEL (default "hermes-agent").
+      If the LLM call fails, falls back to rule-based memory handling.
 """
 from __future__ import annotations
 
@@ -54,9 +58,11 @@ HEADERS = {"X-Hermes-Secret": SECRET}
 # {request_id, answer} to reply_to later.
 BROWSER_URL = os.getenv("BROWSER_URL", "http://localhost:9103/ask")
 MY_URL = os.getenv("BOOKKEEPER_URL", "http://localhost:9102").rstrip("/")
-OPENAI_KEY = os.getenv("OPENAI_API_KEY", "")
-# memory curation needs reliable date math + op discipline -> stronger model
-MODEL = os.getenv("BOOKKEEPER_MODEL", "gpt-4o")
+# LLM endpoint — defaults point at the LOCAL Hermes instance (OpenAI-compatible
+# gateway) so the book-keeper literally brains on Hermes, not OpenAI.
+BOOKKEEPER_BASE_URL = os.getenv("BOOKKEEPER_BASE_URL", "http://127.0.0.1:8643/v1").rstrip("/")
+BOOKKEEPER_KEY = os.getenv("BOOKKEEPER_API_KEY") or os.getenv("OPENAI_API_KEY") or "buddybrain-local"
+MODEL = os.getenv("BOOKKEEPER_MODEL", "hermes-agent")
 
 STATE = HERE / "state"
 STATE.mkdir(exist_ok=True)
@@ -129,16 +135,18 @@ def digest(db: dict) -> str:
 
 # ── LLM ────────────────────────────────────────────────────────────────
 def llm(system: str, user: str) -> str | None:
-    if not OPENAI_KEY:
+    if not BOOKKEEPER_KEY:
         return None
     if PERSONAL_CONTEXT:
         system = PERSONAL_CONTEXT + "\n\n" + system
+    # NOTE: Hermes rejects non-standard params (e.g. reasoning_effort,
+    # response_format). Send ONLY standard chat fields. The system prompts
+    # already instruct the model to respond with pure JSON.
     try:
         r = httpx.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {OPENAI_KEY}"},
-            json={"model": MODEL, "temperature": 0.2,
-                  "response_format": {"type": "json_object"},
+            f"{BOOKKEEPER_BASE_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {BOOKKEEPER_KEY}"},
+            json={"model": MODEL, "temperature": 0.2, "max_tokens": 1024,
                   "messages": [{"role": "system", "content": system},
                                {"role": "user", "content": user}]},
             timeout=60,

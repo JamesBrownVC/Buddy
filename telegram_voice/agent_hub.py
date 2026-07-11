@@ -27,9 +27,12 @@ import os
 
 import config  # first: applies the Windows SSL cert-store fix
 
+import re
+from pathlib import Path
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from brain import think as brain_think
@@ -39,8 +42,26 @@ log = logging.getLogger("hub")
 
 app = FastAPI(title="Hermes agent hub")
 
+# Enable CORS for the frontend dashboard
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 HUB_SECRET = os.getenv("HUB_SECRET", "")
-PUBLIC_PATHS = {"/answer", "/health", "/post_call", "/docs", "/openapi.json"}
+PUBLIC_PATHS = {
+    "/answer",
+    "/health",
+    "/post_call",
+    "/docs",
+    "/openapi.json",
+    "/api/dashboard-state",
+    "/api/toggle-step",
+    "/api/agent-doc",
+}
 SUBSCRIBERS_FILE = None  # set below after STATE_DIR
 
 
@@ -273,6 +294,315 @@ def answer(nudge: str = "") -> str:
 <elevenlabs-convai agent-id="{agent_id}" dynamic-variables='{dyn}'></elevenlabs-convai>
 <script src="https://unpkg.com/@elevenlabs/convai-widget-embed" async></script>
 </body></html>"""
+
+
+class ToggleReq(BaseModel):
+    id: str
+    type: str = "working"
+
+
+@app.get("/api/dashboard-state")
+async def get_dashboard_state():
+    # 1. Check agent health in parallel
+    agents = {
+        "bookkeeper": "http://localhost:9102/health",
+        "browser": "http://localhost:9103/health",
+        "orchestrator": "http://localhost:9104/health"
+    }
+    health_status = {}
+    async with httpx.AsyncClient(timeout=0.5) as client:
+        for name, url in agents.items():
+            try:
+                res = await client.get(url)
+                health_status[name] = "ready" if res.status_code == 200 else "offline"
+            except Exception:
+                health_status[name] = "offline"
+
+    # 2. Read bookkeeper memory
+    working_items = []
+    longterm_items = []
+    net_state_dir = Path(__file__).resolve().parent / "net_agents" / "state"
+    bk_file = net_state_dir / "bookkeeper.json"
+    
+    if bk_file.exists():
+        try:
+            bk_data = json.loads(bk_file.read_text(encoding="utf-8"))
+            working_items = bk_data.get("working", [])
+            longterm_items = bk_data.get("longterm", [])
+        except Exception as e:
+            log.warning("Failed to parse bookkeeper.json: %s", e)
+
+    # 3. Read orchestrator tasks
+    orch_tasks = []
+    orch_file = net_state_dir / "orchestrator_tasks.json"
+    if orch_file.exists():
+        try:
+            orch_tasks = json.loads(orch_file.read_text(encoding="utf-8"))
+        except Exception as e:
+            log.warning("Failed to parse orchestrator_tasks.json: %s", e)
+
+    # Find the active task
+    active_task = None
+    for t in reversed(orch_tasks):
+        if t.get("status") not in ("done", "failed"):
+            active_task = t
+            break
+
+    # 4. Determine focus title and steps
+    focus_title = "No active task. Talk to Buddy to start!"
+    focus_progress = "0/0"
+    steps = []
+
+    if active_task:
+        focus_title = active_task.get("request", "")
+        # Can we extract steps from the task's builder reply or logs?
+        builder_reply = active_task.get("builder_reply", "")
+        parsed_steps = []
+        if builder_reply:
+            lines = builder_reply.splitlines()
+            idx = 1
+            for line in lines:
+                line_str = line.strip()
+                match = re.match(r'^(?:\d+[\.\)]|[\-\*])\s*(.*)', line_str)
+                if match:
+                    step_text = match.group(1).strip()
+                    if step_text:
+                        parsed_steps.append({
+                            "id": f"task-step-{active_task['id']}-{idx}",
+                            "index": f"{idx:02d}",
+                            "title": step_text,
+                            "desc": "Builder task step",
+                            "done": False
+                        })
+                        idx += 1
+        if parsed_steps:
+            steps = parsed_steps
+        else:
+            # Fallback to logs
+            task_logs = active_task.get("log", [])
+            idx = 1
+            for l in task_logs[-3:]:
+                clean_log = re.sub(r'^\[.*?\]\s*', '', l)
+                steps.append({
+                    "id": f"task-log-{active_task['id']}-{idx}",
+                    "index": f"{idx:02d}",
+                    "title": clean_log,
+                    "desc": "Task log status",
+                    "done": False
+                })
+                idx += 1
+        
+        if active_task.get("status") == "done":
+            focus_progress = f"{len(steps)}/{len(steps)}"
+            for s in steps:
+                s["done"] = True
+        else:
+            focus_progress = f"0/{len(steps)}"
+    else:
+        # Fallback to bookkeeper working items
+        active_working = [i for i in working_items if i.get("status") == "active"]
+        if active_working:
+            focus_title = "Your current working memory"
+            idx = 1
+            for item in active_working[:3]:
+                steps.append({
+                    "id": item["id"],
+                    "index": f"{idx:02d}",
+                    "title": item["text"],
+                    "desc": f"Added on {item.get('created', '')}",
+                    "done": item.get("status") == "done"
+                })
+                idx += 1
+            done_count = sum(1 for s in steps if s["done"])
+            focus_progress = f"{done_count}/{len(steps)}"
+        else:
+            focus_title = "Ship the Buddy demo"
+            steps = [
+                {"id": "mock-1", "index": "01", "title": "Finish the dashboard", "desc": "Buddy is handling the code.", "done": False},
+                {"id": "mock-2", "index": "02", "title": "Connect Cloudflare", "desc": "Point Pages at /frontend.", "done": False},
+                {"id": "mock-3", "index": "03", "title": "Practice the story", "desc": "Voice → agents → visible action.", "done": False}
+            ]
+            focus_progress = "0/3"
+
+    # 5. Extract latest browser research action from events.jsonl
+    browser_title = "Idle."
+    browser_desc = "Waiting for next action."
+    browser_status = "idle"
+    
+    events_log = Path(__file__).resolve().parent / "state" / "events.jsonl"
+    if events_log.exists():
+        try:
+            lines = events_log.read_text(encoding="utf-8").strip().splitlines()
+            for line in reversed(lines):
+                if not line:
+                    continue
+                ev = json.loads(line)
+                ev_type = ev.get("type")
+                ev_data = ev.get("data", {})
+                if ev_type == "research_requested":
+                    browser_title = ev_data.get("question", "Researching...")
+                    browser_desc = "Web browser agent researching query."
+                    browser_status = "working"
+                    break
+                elif ev_type == "research_answered":
+                    browser_title = ev_data.get("question", "Research complete.")
+                    ans = ev_data.get("answer", "")
+                    browser_desc = ans[:150] + "..." if len(ans) > 150 else ans
+                    browser_status = "synced"
+                    break
+                elif ev_type == "agent_exchange" and ev_data.get("to") == "browser":
+                    browser_title = ev_data.get("message", "Browsing...")
+                    reply = ev_data.get("reply", "")
+                    if reply:
+                        browser_desc = reply[:150] + "..." if len(reply) > 150 else reply
+                        browser_status = "synced"
+                    else:
+                        browser_desc = "Web browser agent working."
+                        browser_status = "working"
+                    break
+        except Exception as e:
+            log.warning("Failed to parse events.jsonl: %s", e)
+
+    # 6. Crew agent statuses
+    crew = [
+        {"name": "Hermes", "desc": "Keeping the plan small and moving", "state": "ready"},
+        {"name": "Browser", "desc": "Researching web contexts", "state": "ready"},
+        {"name": "Bookkeeper", "desc": "Capturing facts and schedule", "state": "ready"}
+    ]
+    for member in crew:
+        name_lower = member["name"].lower()
+        if name_lower == "hermes":
+            member["state"] = "ready"
+        elif name_lower in health_status:
+            member["state"] = health_status[name_lower]
+
+    # 7. Later tasks
+    later_tasks = []
+    active_longterm = [i for i in longterm_items if i.get("status") == "active"]
+    if active_longterm:
+        priorities = ["orange", "blue", "green"]
+        for idx, item in enumerate(active_longterm[:3]):
+            later_tasks.append({
+                "title": item["text"],
+                "desc": f"Due: {item.get('date') or 'later'}",
+                "time": item.get("date") or "later",
+                "priority": priorities[idx % 3]
+            })
+    else:
+        later_tasks = [
+            {"title": "Connect live browser feed", "desc": "After the static deploy", "time": "later", "priority": "orange"},
+            {"title": "Test Telegram call flow", "desc": "One end-to-end run", "time": "17:00", "priority": "blue"},
+            {"title": "Eat something real", "desc": "Non-negotiable", "time": "soon", "priority": "green"}
+        ]
+
+    return {
+        "system_status": f"Mac mini online · {sum(1 for s in health_status.values() if s == 'ready') + 1} agents ready",
+        "focus": {
+            "title": focus_title,
+            "progress": focus_progress,
+            "steps": steps
+        },
+        "browser": {
+            "status": browser_status,
+            "title": browser_title,
+            "desc": browser_desc,
+            "url": "browser.buddy.local · research session"
+        },
+        "crew": crew,
+        "later_tasks": later_tasks,
+        "el_agent_id": os.getenv("EL_AGENT_ID", "")
+    }
+
+
+@app.post("/api/toggle-step")
+def toggle_step(r: ToggleReq) -> dict:
+    net_state_dir = Path(__file__).resolve().parent / "net_agents" / "state"
+    bk_file = net_state_dir / "bookkeeper.json"
+    orch_file = net_state_dir / "orchestrator_tasks.json"
+
+    # Try toggling in bookkeeper
+    if bk_file.exists():
+        try:
+            bk_data = json.loads(bk_file.read_text(encoding="utf-8"))
+            modified = False
+            for k in ("working", "longterm"):
+                for item in bk_data.get(k, []):
+                    if item.get("id") == r.id:
+                        item["status"] = "done" if item.get("status") == "active" else "active"
+                        modified = True
+                        break
+            if modified:
+                bk_file.write_text(json.dumps(bk_data, indent=2, ensure_ascii=False), encoding="utf-8")
+                return {"ok": True, "source": "bookkeeper", "id": r.id}
+        except Exception as e:
+            log.warning("Failed to modify bookkeeper.json: %s", e)
+
+    # Try toggling in orchestrator tasks
+    if orch_file.exists():
+        try:
+            orch_tasks = json.loads(orch_file.read_text(encoding="utf-8"))
+            modified = False
+            for task in orch_tasks:
+                if task.get("id") == r.id or r.id.startswith(f"task-step-{task['id']}") or r.id.startswith(f"task-log-{task['id']}"):
+                    task["status"] = "done" if task.get("status") != "done" else "gathering_context"
+                    modified = True
+                    break
+            if modified:
+                orch_file.write_text(json.dumps(orch_tasks, indent=2, ensure_ascii=False), encoding="utf-8")
+                return {"ok": True, "source": "orchestrator", "id": r.id}
+        except Exception as e:
+            log.warning("Failed to modify orchestrator_tasks.json: %s", e)
+
+    # If it's a mock step, we just echo success so the UI updates
+    if r.id.startswith("mock-"):
+        return {"ok": True, "source": "mock", "id": r.id}
+
+    return {"ok": False, "error": f"Item {r.id} not found."}
+
+
+# ── Read-only agent documentation for the frontend node-graph ──────────
+# Maps friendly node names (as shown in the dashboard graph) to the exact
+# markdown file that documents that agent.
+CONTEXT_DIR = Path(__file__).resolve().parent / "net_agents" / "context"
+_AGENT_DOC_MAP = {
+    "hermes": "hermes-voice",
+    "voice": "hermes-voice",
+    "hermes-voice": "hermes-voice",
+    "browser": "browser",
+    "bookkeeper": "bookkeeper",
+    "orchestrator": "orchestrator",
+    "planner": "planner",
+    "builder": "builder",
+    "memory-coach": "memory-coach",
+    "coach": "memory-coach",
+}
+
+
+@app.get("/api/agent-doc")
+def get_agent_doc(name: str = "") -> dict:
+    """Return the markdown doc for an agent node so the frontend can display
+    it. Read-only, public (like /api/dashboard-state). Never 500s.
+
+    Security: only files that already exist inside the exact context dir are
+    served. Names containing "/", "\\" or ".." are rejected outright, and the
+    resolved target must sit directly in CONTEXT_DIR — so path traversal is
+    impossible.
+    """
+    raw = (name or "").strip().lower()
+    if not raw or "/" in raw or "\\" in raw or ".." in raw:
+        return {"name": name, "found": False, "markdown": ""}
+    stem = _AGENT_DOC_MAP.get(raw)
+    if not stem:
+        return {"name": name, "found": False, "markdown": ""}
+    try:
+        context_root = CONTEXT_DIR.resolve()
+        target = (context_root / f"{stem}.md").resolve()
+        if target.parent != context_root or not target.is_file():
+            return {"name": name, "found": False, "markdown": ""}
+        return {"name": name, "found": True, "markdown": target.read_text(encoding="utf-8")}
+    except Exception as e:  # never break the frontend over a bad read
+        log.warning("agent-doc read failed for %r: %s", name, e)
+        return {"name": name, "found": False, "markdown": ""}
 
 
 @app.get("/health")

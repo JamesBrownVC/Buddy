@@ -8,3 +8,8 @@ __pycache__/
 *.pyc
 *.session
 *.session-journal
+
+# local backups & os junk
+*.WORKING-*
+index.backup-*.html
+.DS_Store

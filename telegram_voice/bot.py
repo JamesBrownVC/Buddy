@@ -13,7 +13,7 @@ import logging
 
 import config  # first: applies the Windows SSL cert-store fix
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application, CommandHandler, ContextTypes, MessageHandler, filters,
 )
@@ -51,8 +51,10 @@ async def cmd_call(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if topic:
         url += "?nudge=" + urllib.parse.quote(f"The user started this call about: {topic}")
     await update.message.reply_text(
-        f"📞 *Live call ready*\n[Tap to talk to Hermes]({url})",
-        parse_mode="Markdown",
+        "📞 Live call ready — tap the button to talk to Hermes:",
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("🎙 Talk to Hermes now", url=url)]]
+        ),
     )
 
 

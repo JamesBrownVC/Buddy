@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 # Windows fix: a malformed cert in the system store makes
 # SSLContext.load_default_certs() raise ASN1 NOT_ENOUGH_DATA (breaks edge-tts).
 # Fall back to certifi's bundle when that happens.
-_orig_win_store = ssl.SSLContext._load_windows_store_certs
+_orig_win_store = getattr(ssl.SSLContext, "_load_windows_store_certs", None)
 
 def _safe_win_store(self, storename, purpose):
     try:
@@ -23,7 +23,8 @@ def _safe_win_store(self, storename, purpose):
         self.load_verify_locations(cafile=certifi.where())
         return bytearray()
 
-ssl.SSLContext._load_windows_store_certs = _safe_win_store
+if _orig_win_store is not None:
+    ssl.SSLContext._load_windows_store_certs = _safe_win_store
 
 HERE = Path(__file__).resolve().parent
 load_dotenv(HERE / ".env")
