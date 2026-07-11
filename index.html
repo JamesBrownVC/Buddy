@@ -1,0 +1,832 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f3f0e8">
+  <meta name="description" content="Buddy — your calm, proactive AI co-pilot.">
+  <title>Buddy — one thing at a time</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f3f0e8;
+      --ink: #151714;
+      --muted: #6d7169;
+      --line: rgba(21, 23, 20, .14);
+      --card: rgba(255, 255, 252, .72);
+      --orange: #ff5b35;
+      --green: #b9f227;
+      --blue: #2f6dff;
+      --shadow: 0 24px 60px rgba(34, 29, 18, .09);
+      --radius: 22px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { background: var(--paper); }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      overflow-x: hidden;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 6% 4%, rgba(255, 91, 53, .13), transparent 25rem),
+        radial-gradient(circle at 94% 2%, rgba(185, 242, 39, .15), transparent 27rem),
+        var(--paper);
+      font-family: "Manrope", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, a { font: inherit; }
+    button { color: inherit; }
+
+    button:focus-visible, a:focus-visible {
+      outline: 3px solid var(--blue);
+      outline-offset: 3px;
+    }
+
+    .noise {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      opacity: .035;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.7'/%3E%3C/svg%3E");
+    }
+
+    .shell {
+      width: min(1440px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 22px 0 42px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 58px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      font-size: 19px;
+      font-weight: 700;
+      letter-spacing: -.04em;
+    }
+
+    .brand-mark {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border: 1px solid var(--ink);
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 3px 3px 0 var(--ink);
+    }
+
+    .brand-mark svg { width: 16px; }
+
+    .system-status {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      color: var(--muted);
+      font: 500 11px/1 "DM Mono", monospace;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #69b700;
+      box-shadow: 0 0 0 5px rgba(105, 183, 0, .12);
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 1.55fr) minmax(290px, .65fr);
+      gap: 16px;
+      padding-top: 44px;
+    }
+
+    .hero {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      gap: 24px;
+      margin-bottom: 18px;
+    }
+
+    .eyebrow {
+      margin: 0 0 13px;
+      color: var(--muted);
+      font: 500 11px/1.2 "DM Mono", monospace;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+    }
+
+    h1 {
+      max-width: 850px;
+      margin: 0;
+      font-size: clamp(46px, 7vw, 96px);
+      font-weight: 500;
+      line-height: .92;
+      letter-spacing: -.075em;
+    }
+
+    h1 span {
+      position: relative;
+      white-space: nowrap;
+    }
+
+    h1 span::after {
+      position: absolute;
+      right: -.08em;
+      bottom: -.05em;
+      left: .02em;
+      height: .09em;
+      border-radius: 99px;
+      background: var(--orange);
+      content: "";
+      transform: rotate(-1.5deg);
+    }
+
+    .clock {
+      padding-bottom: 3px;
+      text-align: right;
+    }
+
+    .clock strong {
+      display: block;
+      font: 500 clamp(30px, 4vw, 52px)/.9 "DM Mono", monospace;
+      letter-spacing: -.08em;
+    }
+
+    .clock span {
+      display: block;
+      margin-top: 10px;
+      color: var(--muted);
+      font: 11px/1 "DM Mono", monospace;
+      text-transform: uppercase;
+    }
+
+    .stack { display: grid; gap: 16px; }
+
+    .card {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--card);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(16px);
+    }
+
+    .focus-card {
+      padding: clamp(24px, 4vw, 44px);
+      background: var(--ink);
+      color: #fbfaf5;
+    }
+
+    .focus-card::before {
+      position: absolute;
+      top: -90px;
+      right: -70px;
+      width: 260px;
+      height: 260px;
+      border-radius: 50%;
+      background: var(--orange);
+      content: "";
+      filter: blur(1px);
+    }
+
+    .focus-top {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    .focus-card .eyebrow { color: rgba(255,255,255,.55); }
+
+    .focus-card h2 {
+      max-width: 620px;
+      margin: 0;
+      font-size: clamp(30px, 4.7vw, 61px);
+      font-weight: 500;
+      line-height: 1;
+      letter-spacing: -.055em;
+    }
+
+    .focus-number {
+      display: grid;
+      flex: 0 0 56px;
+      width: 56px;
+      height: 56px;
+      place-items: center;
+      border: 1px solid rgba(255,255,255,.35);
+      border-radius: 50%;
+      background: rgba(255,255,255,.1);
+      font: 500 14px "DM Mono", monospace;
+    }
+
+    .steps {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 9px;
+      margin-top: 38px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 25px 1fr;
+      gap: 10px;
+      min-height: 78px;
+      padding: 14px;
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 14px;
+      background: rgba(255,255,255,.075);
+      color: #fbfaf5;
+      text-align: left;
+      cursor: pointer;
+      transition: transform .2s ease, background .2s ease, opacity .2s ease;
+    }
+
+    .step:hover { background: rgba(255,255,255,.13); transform: translateY(-2px); }
+
+    .step-index {
+      display: grid;
+      width: 25px;
+      height: 25px;
+      place-items: center;
+      border: 1px solid rgba(255,255,255,.3);
+      border-radius: 50%;
+      font: 10px "DM Mono", monospace;
+    }
+
+    .step-copy strong {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .step-copy small {
+      color: rgba(255,255,255,.5);
+      font-size: 10px;
+      line-height: 1.35;
+    }
+
+    .step[aria-pressed="true"] { opacity: .5; }
+    .step[aria-pressed="true"] .step-index { border-color: var(--green); background: var(--green); color: var(--ink); }
+    .step[aria-pressed="true"] strong { text-decoration: line-through; }
+
+    .agents-card { padding: 24px; }
+
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 21px;
+    }
+
+    .section-head h2 {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 650;
+      letter-spacing: -.035em;
+    }
+
+    .mono-label {
+      color: var(--muted);
+      font: 10px "DM Mono", monospace;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .agent-list { display: grid; gap: 2px; }
+
+    .agent {
+      display: grid;
+      grid-template-columns: 37px 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 11px 6px;
+      border-top: 1px solid var(--line);
+    }
+
+    .agent:first-child { border-top: 0; }
+
+    .agent-icon {
+      display: grid;
+      width: 37px;
+      height: 37px;
+      place-items: center;
+      border-radius: 12px;
+      background: #e9e6dc;
+      font: 12px "DM Mono", monospace;
+    }
+
+    .agent:nth-child(1) .agent-icon { background: #dfe8ff; color: var(--blue); }
+    .agent:nth-child(2) .agent-icon { background: #fff0e6; color: var(--orange); }
+    .agent:nth-child(3) .agent-icon { background: #e7f5bd; color: #537300; }
+
+    .agent strong { display: block; font-size: 12px; }
+    .agent small { color: var(--muted); font-size: 10px; }
+
+    .agent-state {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font: 9px "DM Mono", monospace;
+      text-transform: uppercase;
+    }
+
+    .agent-state::before {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #69b700;
+      content: "";
+    }
+
+    .browser-card {
+      min-height: 380px;
+      padding: 13px;
+      background: #d8d4c9;
+    }
+
+    .browser-window {
+      height: 100%;
+      min-height: 354px;
+      overflow: hidden;
+      border: 1px solid rgba(21,23,20,.2);
+      border-radius: 15px;
+      background: #fcfbf7;
+      box-shadow: 0 12px 30px rgba(30,30,20,.12);
+    }
+
+    .browser-bar {
+      display: grid;
+      grid-template-columns: 60px 1fr 60px;
+      align-items: center;
+      gap: 12px;
+      height: 42px;
+      padding: 0 13px;
+      border-bottom: 1px solid var(--line);
+      background: #f1efe8;
+    }
+
+    .browser-dots { display: flex; gap: 5px; }
+    .browser-dots i { width: 8px; height: 8px; border-radius: 50%; background: #b9b8b1; }
+    .browser-dots i:first-child { background: var(--orange); }
+
+    .address {
+      overflow: hidden;
+      color: var(--muted);
+      font: 9px "DM Mono", monospace;
+      text-align: center;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .browser-live {
+      justify-self: end;
+      color: #477000;
+      font: 8px "DM Mono", monospace;
+      text-transform: uppercase;
+    }
+
+    .browser-body {
+      display: grid;
+      height: 311px;
+      place-items: center;
+      padding: 28px;
+      background:
+        linear-gradient(rgba(21,23,20,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(21,23,20,.035) 1px, transparent 1px),
+        #fbfaf6;
+      background-size: 28px 28px;
+    }
+
+    .research {
+      width: min(430px, 100%);
+      transform: rotate(-1deg);
+    }
+
+    .research-kicker {
+      display: inline-block;
+      margin-bottom: 14px;
+      padding: 5px 8px;
+      border: 1px solid var(--ink);
+      border-radius: 999px;
+      background: var(--green);
+      font: 8px "DM Mono", monospace;
+      text-transform: uppercase;
+    }
+
+    .research h3 {
+      margin: 0;
+      font-size: clamp(25px, 3.8vw, 46px);
+      font-weight: 600;
+      line-height: .98;
+      letter-spacing: -.06em;
+    }
+
+    .research p {
+      max-width: 370px;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.6;
+    }
+
+    .cursor {
+      position: absolute;
+      right: 24%;
+      bottom: 19%;
+      width: 22px;
+      filter: drop-shadow(2px 3px 2px rgba(0,0,0,.25));
+      animation: cursor-drift 4s ease-in-out infinite alternate;
+    }
+
+    .side-card { padding: 24px; }
+
+    .voice-card {
+      min-height: 225px;
+      background: var(--orange);
+      color: #1a130f;
+    }
+
+    .voice-card .eyebrow { color: rgba(26,19,15,.6); }
+
+    .voice-card h2 {
+      max-width: 300px;
+      margin: 0;
+      font-size: clamp(27px, 3vw, 40px);
+      font-weight: 550;
+      line-height: 1.02;
+      letter-spacing: -.05em;
+    }
+
+    .voice-control {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-top: 28px;
+    }
+
+    .voice-button {
+      display: grid;
+      flex: 0 0 56px;
+      width: 56px;
+      height: 56px;
+      place-items: center;
+      border: 1px solid var(--ink);
+      border-radius: 50%;
+      background: var(--ink);
+      color: white;
+      cursor: pointer;
+      transition: transform .2s ease;
+    }
+
+    .voice-button:hover { transform: scale(1.06) rotate(-4deg); }
+    .voice-button svg { width: 21px; }
+
+    .wave { display: flex; align-items: center; gap: 4px; height: 32px; }
+    .wave i { width: 3px; height: 8px; border-radius: 9px; background: var(--ink); }
+    .voice-card[data-listening="true"] .wave i { animation: wave .8s ease-in-out infinite alternate; }
+    .wave i:nth-child(2) { height: 18px; animation-delay: -.3s !important; }
+    .wave i:nth-child(3) { height: 27px; animation-delay: -.5s !important; }
+    .wave i:nth-child(4) { height: 15px; animation-delay: -.15s !important; }
+    .wave i:nth-child(5) { height: 23px; animation-delay: -.4s !important; }
+
+    .voice-status { font: 10px/1.4 "DM Mono", monospace; }
+
+    .tasks-card { padding: 24px; }
+
+    .task-list { display: grid; gap: 10px; }
+
+    .task {
+      display: grid;
+      grid-template-columns: 8px 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .task:first-child { border-top: 0; }
+    .task-priority { width: 8px; height: 8px; border-radius: 50%; background: var(--orange); }
+    .task:nth-child(2) .task-priority { background: var(--blue); }
+    .task:nth-child(3) .task-priority { background: #69b700; }
+    .task strong { display: block; font-size: 11px; }
+    .task small { color: var(--muted); font-size: 9px; }
+    .task time { color: var(--muted); font: 9px "DM Mono", monospace; }
+
+    .energy-card {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 18px;
+      min-height: 150px;
+      background: var(--green);
+    }
+
+    .energy-card h2 {
+      margin: 4px 0 0;
+      font-size: 23px;
+      font-weight: 600;
+      line-height: 1.05;
+      letter-spacing: -.045em;
+    }
+
+    .energy-ring {
+      display: grid;
+      width: 80px;
+      height: 80px;
+      place-items: center;
+      border-radius: 50%;
+      background: conic-gradient(var(--ink) 0 68%, rgba(21,23,20,.15) 68%);
+    }
+
+    .energy-ring::before {
+      grid-area: 1 / 1;
+      width: 62px;
+      height: 62px;
+      border-radius: 50%;
+      background: var(--green);
+      content: "";
+    }
+
+    .energy-ring span {
+      z-index: 1;
+      font: 500 13px "DM Mono", monospace;
+    }
+
+    footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      margin-top: 18px;
+      padding: 18px 3px;
+      color: var(--muted);
+      font: 9px/1.5 "DM Mono", monospace;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+    }
+
+    @keyframes wave { to { height: 31px; } }
+    @keyframes cursor-drift { to { transform: translate(30px, -22px) rotate(4deg); } }
+
+    @media (max-width: 880px) {
+      .shell { width: min(100% - 24px, 680px); }
+      main { grid-template-columns: 1fr; padding-top: 30px; }
+      .hero { grid-column: 1; }
+      h1 { font-size: clamp(48px, 14vw, 76px); }
+      .clock { display: none; }
+      .steps { grid-template-columns: 1fr; }
+      .step { min-height: 0; }
+      .focus-card::before { right: -140px; }
+    }
+
+    @media (max-width: 520px) {
+      .system-status span:last-child { display: none; }
+      .focus-card, .side-card, .agents-card, .tasks-card { padding: 20px; }
+      .focus-top { align-items: flex-start; }
+      .focus-number { width: 45px; height: 45px; flex-basis: 45px; }
+      .browser-card { min-height: 310px; }
+      .browser-window { min-height: 284px; }
+      .browser-body { height: 241px; padding: 20px; }
+      footer { flex-direction: column; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="noise" aria-hidden="true"></div>
+  <div class="shell">
+    <header>
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M7 11.5 10.2 15 17 7.8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        Buddy
+      </div>
+      <div class="system-status" aria-label="Buddy system status">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span>Mac mini online · 7 agents ready</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow">Saturday · Your command center</p>
+          <h1 id="page-title">One thing<br><span>at a time.</span></h1>
+        </div>
+        <div class="clock" aria-label="Current time">
+          <strong id="clock">15:43</strong>
+          <span id="timezone">Local time</span>
+        </div>
+      </section>
+
+      <div class="stack">
+        <section class="card focus-card" id="focus-card" aria-labelledby="focus-title">
+          <div class="focus-top">
+            <div>
+              <p class="eyebrow">Your only job right now</p>
+              <h2 id="focus-title">Ship the Buddy demo</h2>
+            </div>
+            <span class="focus-number" id="focus-progress" aria-live="polite">0/3</span>
+          </div>
+          <div class="steps" id="task-list">
+            <button class="step" type="button" aria-pressed="false">
+              <span class="step-index">01</span>
+              <span class="step-copy"><strong>Finish the dashboard</strong><small>Buddy is handling the code.</small></span>
+            </button>
+            <button class="step" type="button" aria-pressed="false">
+              <span class="step-index">02</span>
+              <span class="step-copy"><strong>Connect Cloudflare</strong><small>Point Pages at /frontend.</small></span>
+            </button>
+            <button class="step" type="button" aria-pressed="false">
+              <span class="step-index">03</span>
+              <span class="step-copy"><strong>Practice the story</strong><small>Voice → agents → visible action.</small></span>
+            </button>
+          </div>
+        </section>
+
+        <section class="card browser-card" id="browser-preview" aria-labelledby="browser-title">
+          <div class="browser-window">
+            <div class="browser-bar">
+              <span class="browser-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="address">browser.buddy.local · research session</span>
+              <span class="browser-live">● live</span>
+            </div>
+            <div class="browser-body">
+              <div class="research">
+                <span class="research-kicker">Browser agent · working</span>
+                <h3 id="browser-title">Finding the shortest path to done.</h3>
+                <p>Comparing Cloudflare deployment options and preparing the next action. You do not need to watch every tab.</p>
+              </div>
+              <svg class="cursor" viewBox="0 0 24 30" aria-hidden="true"><path d="M2 1.7v23.1l6.2-6.1 4 9 4.4-2-4-8.7h8.8L2 1.7Z" fill="#151714" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg>
+            </div>
+          </div>
+        </section>
+
+        <section class="card agents-card" aria-labelledby="agents-title">
+          <div class="section-head">
+            <h2 id="agents-title">Your crew</h2>
+            <span class="mono-label">3 active now</span>
+          </div>
+          <div class="agent-list" id="agent-list">
+            <div class="agent">
+              <span class="agent-icon" aria-hidden="true">H</span>
+              <span><strong>Hermes</strong><small>Keeping the plan small and moving</small></span>
+              <span class="agent-state">listening</span>
+            </div>
+            <div class="agent">
+              <span class="agent-icon" aria-hidden="true">B</span>
+              <span><strong>Browser</strong><small>Researching Cloudflare deployment</small></span>
+              <span class="agent-state">working</span>
+            </div>
+            <div class="agent">
+              <span class="agent-icon" aria-hidden="true">M</span>
+              <span><strong>Bookkeeper</strong><small>Captured 3 decisions from today</small></span>
+              <span class="agent-state">synced</span>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <aside class="stack" aria-label="Buddy controls and status">
+        <section class="card side-card voice-card" id="voice-check-in" data-listening="false" aria-labelledby="voice-title">
+          <p class="eyebrow">Need help getting unstuck?</p>
+          <h2 id="voice-title">Talk it out with Buddy.</h2>
+          <div class="voice-control">
+            <button class="voice-button" id="voice-button" type="button" aria-label="Start a voice check-in" aria-pressed="false">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="8" y="3" width="8" height="13" rx="4" stroke="currentColor" stroke-width="2"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </button>
+            <div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+            <span class="voice-status" id="voice-status" aria-live="polite">Tap to check in</span>
+          </div>
+        </section>
+
+        <section class="card side-card energy-card" aria-labelledby="energy-title">
+          <div>
+            <span class="mono-label">Capacity today</span>
+            <h2 id="energy-title">Enough for<br>one good push.</h2>
+          </div>
+          <div class="energy-ring" aria-label="Energy at 68 percent"><span>68%</span></div>
+        </section>
+
+        <section class="card tasks-card" aria-labelledby="later-title">
+          <div class="section-head">
+            <h2 id="later-title">Not now, but safe</h2>
+            <span class="mono-label">Buddy remembers</span>
+          </div>
+          <div class="task-list">
+            <div class="task">
+              <span class="task-priority" aria-hidden="true"></span>
+              <span><strong>Connect live browser feed</strong><small>After the static deploy</small></span>
+              <time>later</time>
+            </div>
+            <div class="task">
+              <span class="task-priority" aria-hidden="true"></span>
+              <span><strong>Test Telegram call flow</strong><small>One end-to-end run</small></span>
+              <time>17:00</time>
+            </div>
+            <div class="task">
+              <span class="task-priority" aria-hidden="true"></span>
+              <span><strong>Eat something real</strong><small>Non-negotiable</small></span>
+              <time>soon</time>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <footer>
+      <span>Buddy stays with the task when attention moves.</span>
+      <span>Hermes · Telegram · ElevenLabs · Local browser</span>
+    </footer>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const apiBase = (params.get("api") || "").replace(/\/+$/, "");
+    const steps = [...document.querySelectorAll(".step")];
+    const progress = document.querySelector("#focus-progress");
+    const voiceCard = document.querySelector("#voice-check-in");
+    const voiceButton = document.querySelector("#voice-button");
+    const voiceStatus = document.querySelector("#voice-status");
+
+    function updateClock() {
+      const now = new Date();
+      document.querySelector("#clock").textContent = now.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+      });
+      document.querySelector("#timezone").textContent =
+        Intl.DateTimeFormat().resolvedOptions().timeZone.replaceAll("_", " ");
+    }
+
+    function updateProgress() {
+      const done = steps.filter((step) => step.getAttribute("aria-pressed") === "true").length;
+      progress.textContent = `${done}/3`;
+    }
+
+    steps.forEach((step) => {
+      step.addEventListener("click", () => {
+        step.setAttribute("aria-pressed", String(step.getAttribute("aria-pressed") !== "true"));
+        updateProgress();
+      });
+    });
+
+    voiceButton.addEventListener("click", () => {
+      if (apiBase) {
+        location.href = `${apiBase}/answer?nudge=${encodeURIComponent("I need help choosing the next smallest action.")}`;
+        return;
+      }
+
+      const listening = voiceCard.dataset.listening !== "true";
+      voiceCard.dataset.listening = String(listening);
+      voiceButton.setAttribute("aria-pressed", String(listening));
+      voiceStatus.textContent = listening ? "Listening… demo mode" : "Tap to check in";
+    });
+
+    updateClock();
+    setInterval(updateClock, 30000);
+
+    console.assert(
+      steps.length === 3 && voiceButton && progress,
+      "Buddy dashboard failed its startup check."
+    );
+  </script>
+</body>
+</html>
