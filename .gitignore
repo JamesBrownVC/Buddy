@@ -1,34 +1,10 @@
-# Secrets — never commit
-.env
-.env.*
-!.env.example
-*.key
-secrets.json
-
-# Python
+# secrets & runtime state — never commit
+telegram_voice/.env
+**/.env
+telegram_voice/.venv/
+telegram_voice/state/
+telegram_voice/net_agents/state/
 __pycache__/
 *.pyc
-.venv/
-venv/
-
-# Node
-node_modules/
-
-# Models / caches
-models/
-*.pt
-*.bin
-*.gguf
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Runtime state, logs, generated audio & personal data — never commit
-telegram_voice/state/*
-!telegram_voice/state/.gitkeep
-telegram_voice/net_agents/state/*
-!telegram_voice/net_agents/state/.gitkeep
-*.log
-*.ogg
-*.exe
+*.session
+*.session-journal
