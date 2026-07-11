@@ -120,7 +120,17 @@ cloudflared tunnel --url http://localhost:8484
 ## Network agent modules (net_agents/)
 
 Each agent = one self-contained file + its own process; the only coupling
-is text exchange through the hub. Currently:
+is text exchange through the hub.
+
+**Personal context convention**: every agent has its own markdown file at
+`net_agents/context/<name>.md`, loaded at startup and prepended to every
+LLM call that agent makes. Edit the .md, restart the agent — no code
+changes. `@include <path>` lines pull in bigger shared docs (the browser
+agent's context includes `BROWSER_ASSISTANT_OPERATIONS.md` from the
+project root this way). The ElevenLabs voice prompts (hermes-voice,
+planner, memory-coach) come from the same folder via `setup_elevenlabs.py`.
+
+Currently:
 
 - **bookkeeper** (:9102) — the network's memory. Working memory with a
   bell-curve attention window (±3 weeks around today, σ=7d), long-term
