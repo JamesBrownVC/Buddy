@@ -1,0 +1,34 @@
+{
+  "user": {
+    "role": "the human \u2014 final authority; reached via Telegram or a Hermes voice call",
+    "reports_to": null
+  },
+  "orchestrator": {
+    "role": "manager \u2014 owns tasks end-to-end, routes work, keeps memory fed",
+    "reports_to": "user"
+  },
+  "hermes-voice": {
+    "role": "voice interface \u2014 talks to the user live (ElevenLabs)",
+    "reports_to": "orchestrator"
+  },
+  "bookkeeper": {
+    "role": "memory \u2014 working+long-term memory, nightly dreams; ALL durable facts go here",
+    "reports_to": "orchestrator"
+  },
+  "browser": {
+    "role": "research \u2014 web lookups, reports condensed answers with sources",
+    "reports_to": "orchestrator"
+  },
+  "builder": {
+    "role": "execution \u2014 receives a PRD and builds/plans the deliverable",
+    "reports_to": "orchestrator"
+  },
+  "planner": {
+    "role": "voice sub-agent \u2014 breaks goals into tiny steps",
+    "reports_to": "hermes-voice"
+  },
+  "memory-coach": {
+    "role": "voice sub-agent \u2014 ADHD reframes",
+    "reports_to": "hermes-voice"
+  }
+}
