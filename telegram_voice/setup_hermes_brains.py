@@ -17,10 +17,12 @@ import subprocess
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-for line in (HERE / ".env").read_text().splitlines():
-    if "=" in line and not line.strip().startswith("#"):
-        k, _, v = line.partition("=")
-        os.environ.setdefault(k.strip(), v.strip())
+_ENV = HERE / ".env"
+if _ENV.exists():
+    for line in _ENV.read_text().splitlines():
+        if "=" in line and not line.strip().startswith("#"):
+            k, _, v = line.partition("=")
+            os.environ.setdefault(k.strip(), v.strip())
 
 OPENAI_KEY = os.getenv("OPENAI_API_KEY", "")
 HERMES = str(Path.home() / ".local" / "bin" / "hermes")

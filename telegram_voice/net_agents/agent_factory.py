@@ -18,10 +18,12 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent          # net_agents/
 ROOT = HERE.parent                               # telegram_voice/
-for _line in (ROOT / ".env").read_text(encoding="utf-8").splitlines():
-    if "=" in _line and not _line.strip().startswith("#"):
-        _k, _, _v = _line.partition("=")
-        os.environ.setdefault(_k.strip(), _v.strip())
+_ENV = ROOT / ".env"
+if _ENV.exists():
+    for _line in _ENV.read_text(encoding="utf-8").splitlines():
+        if "=" in _line and not _line.strip().startswith("#"):
+            _k, _, _v = _line.partition("=")
+            os.environ.setdefault(_k.strip(), _v.strip())
 
 OPENAI_KEY = os.getenv("OPENAI_API_KEY", "")
 HERMES = str(Path.home() / ".local" / "bin" / "hermes")

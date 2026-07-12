@@ -23,12 +23,14 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-# load .env once (shared by every agent module)
+# load .env once (shared by every agent module); absent on CI and fresh clones
 _HERE = Path(__file__).resolve().parent
-for _line in (_HERE.parent / ".env").read_text(encoding="utf-8").splitlines():
-    if "=" in _line and not _line.strip().startswith("#"):
-        _k, _, _v = _line.partition("=")
-        os.environ.setdefault(_k.strip(), _v.strip())
+_ENV = _HERE.parent / ".env"
+if _ENV.exists():
+    for _line in _ENV.read_text(encoding="utf-8").splitlines():
+        if "=" in _line and not _line.strip().startswith("#"):
+            _k, _, _v = _line.partition("=")
+            os.environ.setdefault(_k.strip(), _v.strip())
 
 try:
     from net_agents.failure_log import log_failure
