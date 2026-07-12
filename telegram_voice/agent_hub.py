@@ -592,7 +592,9 @@ def get_agent_doc(name: str = "") -> dict:
     raw = (name or "").strip().lower()
     if not raw or "/" in raw or "\\" in raw or ".." in raw:
         return {"name": name, "found": False, "markdown": ""}
-    stem = _AGENT_DOC_MAP.get(raw)
+    # known aliases first; otherwise fall back to context/<name>.md directly, so
+    # builder-generated agents (which write their own context md) are served too.
+    stem = _AGENT_DOC_MAP.get(raw) or (raw if re.fullmatch(r"[a-z0-9_-]{1,40}", raw) else None)
     if not stem:
         return {"name": name, "found": False, "markdown": ""}
     try:

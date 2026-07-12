@@ -1168,7 +1168,9 @@
       user:         { role: "You · Telegram",          endpoint: "Telegram",                     blurb: "Where your messages come in and Buddy's summaries land.", docNames: ["user"] },
       browser:      { role: "Stealth web · Browser",   endpoint: ":9103",  brain: "stealth Camoufox · noVNC :5900", blurb: "Drives a real stealth browser to read the web and report back.", docNames: ["browser"] },
       bookkeeper:   { role: "Memory · Bookkeeper",     endpoint: ":9102",  brain: "local Hermes :8643",             blurb: "Captures facts and schedule; its brain runs on the local Hermes.", docNames: ["bookkeeper"] },
-      orchestrator: { role: "Router · Orchestrator",   endpoint: ":9104",  blurb: "Runs work end to end, coordinating the other agents.", docNames: ["orchestrator"] }
+      orchestrator: { role: "Router · Orchestrator",   endpoint: ":9104",  blurb: "Runs work end to end, coordinating the other agents.", docNames: ["orchestrator"] },
+      builder:      { role: "Builds agents · Builder", endpoint: ":9105",  blurb: "Turns a one-line spec into a whole new agent: its own Hermes brain, /ask service, registry entry, and a node here — instantly callable by the others.", docNames: ["builder"] },
+      repair:       { role: "Self-heal · Repair",      endpoint: ":9106",  brain: "reads failures.jsonl (local RAG)", blurb: "Diagnoses and fixes the network: restarts dead agents, recreates the stealth browser, restarts brains. Ask it to 'scan' then 'repair'.", docNames: ["repair"] }
     };
 
     let currentDocUrl = null;   // object URL for the raw-md fallback link
@@ -1257,8 +1259,19 @@
     }
 
     function openDrawer(id) {
-      const info = NODE_INFO[id], node = nodeById[id], drawer = $("#agent-drawer");
-      if (!info || !node || !drawer) return;
+      const node = nodeById[id], drawer = $("#agent-drawer");
+      if (!node || !drawer) return;
+      // Static agents have curated info; builder/repair/generated agents fall
+      // back to info derived from the node itself so every node is clickable.
+      const info = NODE_INFO[id] || {
+        role: node.role || "Agent",
+        endpoint: node.port ? (":" + node.port) : "",
+        brain: node.generated ? "own Hermes brain · gpt-5.6-terra" : undefined,
+        blurb: node.desc || (node.generated
+          ? "A builder-generated agent. It can call the other agents via the hub."
+          : "A Hermes-backed agent in the network."),
+        docNames: [id],
+      };
       drawer.dataset.node = id;
       lastFocused = document.activeElement;
 
@@ -1464,8 +1477,8 @@
           const x = 300 + (gi % 2 ? 1 : -1) * (60 + 40 * Math.floor(gi / 2));
           const y = 415 - 6 * (gi % 2);
           const node = { id: a.name, label: a.name[0].toUpperCase() + a.name.slice(1),
-                         role: "Generated", emoji: "✨", x: Math.max(30, Math.min(570, x)),
-                         y, r: 20, generated: true };
+                         role: "Generated agent", emoji: "✨", x: Math.max(30, Math.min(570, x)),
+                         y, r: 20, generated: true, port: a.port, desc: a.desc };
           NODES.push(node); nodeById[a.name] = node;
           EDGES.push(["builder", a.name]);          // builder spawned it
           EDGES.push(["orchestrator", a.name]);     // orchestrator can call it
