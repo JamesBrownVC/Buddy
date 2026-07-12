@@ -34,6 +34,8 @@ VENV_PY = str(ROOT / ".venv" / "bin" / "python")
 
 log = logging.getLogger("agent_factory")
 
+NETWORK_DIRECTIVE = "\n\n## Network discipline (this OVERRIDES your default instincts)\nYou are ONE specialist in a team of agents — you are not expected to know or do everything, and you must never pretend to. Language models answer over-confidently by default; consciously resist that here.\n\n- Stay in your lane. If a request needs information or an action that is not squarely part of YOUR role, do NOT answer from your own guesses or general knowledge — DELEGATE it. Use ask_agent to send it to the agent whose job it is (call list_agents to see who does what), or ask the 'router' agent when you are unsure who should handle it. Then relay their answer.\n- The moment you are stuck, unsure, or lack the tool/fact to do something properly: ask a peer instead of bluffing. A confident wrong answer is a failure; asking for help is the correct, expected behaviour.\n- Only answer directly what is clearly within your role AND that you can do reliably.\n- If, after routing, no agent can help, say plainly that you do not know — never invent an answer.\n"
+
 HERMES_CONFIG = """# {name}brain — Hermes brain for the {name} agent (gpt-5.6-terra via terra proxy)
 model:
   default: "gpt-5.6-terra"
@@ -108,6 +110,7 @@ def build_agent(name: str, purpose: str, persona: str) -> dict:
     os.chmod(pdir / ".env", 0o600)
     (pdir / "config.yaml").write_text(HERMES_CONFIG.format(
         name=slug, proxy=PROXY_URL, hvenv=HVENV, tv=str(ROOT)))
+    persona = persona.rstrip() + NETWORK_DIRECTIVE
     (pdir / "SOUL.md").write_text(persona)
 
     # 2) the thin forwarder service
