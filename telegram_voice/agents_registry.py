@@ -122,15 +122,31 @@ def ask_agent(name: str, message: str) -> str:
             persona = load_context(name) or spec.get("persona", "")
             return think(message, persona=persona)
         if kind == "http":
+            # default aligned to the forwarder->brain timeout (120s) so the hub
+            # doesn't abandon at 45s while the brain is still working
             r = httpx.post(spec["url"],
                            json={"message": message, "from": "hermes-voice"},
-                           timeout=spec.get("timeout", 45))
+                           timeout=spec.get("timeout", 120))
             r.raise_for_status()
             d = r.json()
             for key in ("reply", "answer", "response", "message"):
                 if isinstance(d, dict) and d.get(key):
                     return str(d[key])
             return json.dumps(d)[:800]
+        if kind == "hermes":
+            # Direct-to-brain adapter: call the Hermes gateway's OpenAI-compatible
+            # endpoint, skipping the redundant per-agent forwarder process. This
+            # is what lets forwarders be folded away (Stage 6) without a hop.
+            base = spec.get("brain_url") or f"http://127.0.0.1:{spec['brain_port']}/v1"
+            key = spec.get("brain_key", "")
+            r = httpx.post(f"{base.rstrip('/')}/chat/completions",
+                           headers={"Authorization": f"Bearer {key}"},
+                           json={"model": "hermes-agent",
+                                 "messages": [{"role": "user", "content": message}]},
+                           timeout=spec.get("timeout", 120))
+            r.raise_for_status()
+            content = (r.json()["choices"][0]["message"].get("content") or "").strip()
+            return content or "(no reply)"
         if kind == "cmd":
             configured = spec.get("command", "")
             command = (list(configured) if isinstance(configured, list)

@@ -12,9 +12,10 @@ import logging
 import os
 import re
 import secrets
-import socket
 import subprocess
 from pathlib import Path
+
+from net_agents import registry_io
 
 HERE = Path(__file__).resolve().parent          # net_agents/
 ROOT = HERE.parent                               # telegram_voice/
@@ -89,34 +90,39 @@ app = make_agent_app("{name}", brain_port={brain_port}, brain_key={brain_key!r})
 '''
 
 
-def _free_port(lo: int, hi: int) -> int:
-    for p in range(lo, hi):
-        with socket.socket() as s:
-            if s.connect_ex(("127.0.0.1", p)) != 0:
-                return p
-    raise RuntimeError(f"no free port in {lo}-{hi}")
-
-
 def _slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", name.lower())[:24] or "agent"
 
 
 def _registry() -> dict:
-    try:
-        return json.loads(AGENTS_JSON.read_text())
-    except Exception:
-        return {}
+    return registry_io.read_lenient()
 
 
 def build_agent(name: str, purpose: str, persona: str) -> dict:
     """Create + launch a new Hermes autonomous agent. Returns a status dict."""
     slug = _slug(name)
-    reg = _registry()
-    if slug in reg:
-        return {"ok": False, "error": f"agent '{slug}' already exists"}
 
-    brain_port = _free_port(8660, 8699)
-    agent_port = _free_port(9110, 9199)
+    # Reserve the slug + both ports and write the registry entry in ONE locked,
+    # atomic step BEFORE launching anything — this closes the double-allocation
+    # TOCTOU and the silent last-writer-wins registry drop under concurrent builds.
+    def _reserve(reg: dict) -> dict:
+        if slug in reg:
+            return {"ok": False, "error": f"agent '{slug}' already exists"}
+        bp = registry_io.allocate_port(reg, registry_io.BRAIN_RANGE, set())
+        ap = registry_io.allocate_port(reg, registry_io.AGENT_RANGE, {bp})
+        reg[slug] = {"type": "http", "url": f"http://localhost:{ap}/ask",
+                     "description": purpose, "brain_port": bp,
+                     "agent_port": ap, "generated": True}
+        return {"ok": True, "brain_port": bp, "agent_port": ap}
+
+    try:
+        reserved = registry_io.with_registry(_reserve)
+    except registry_io.RegistryUnreadable as e:
+        return {"ok": False, "error": f"registry unreadable, refusing to build: {e}"}
+    if not reserved.get("ok"):
+        return reserved
+    brain_port = reserved["brain_port"]
+    agent_port = reserved["agent_port"]
     brain_key = f"{slug}brain-{secrets.token_hex(10)}"  # >=16 chars (Hermes min)
 
     # 1) Hermes profile (the agent's brain), with agent_bridge MCP for peer calls
@@ -144,16 +150,19 @@ def build_agent(name: str, purpose: str, persona: str) -> dict:
         f"A Hermes autonomous agent ({slug}brain, gpt-5.6-terra). Talks to peers "
         f"via list_agents / ask_agent.\n")
 
-    # 3) registry entry — instantly reachable by every other agent
-    reg[slug] = {"type": "http", "url": f"http://localhost:{agent_port}/ask",
-                 "description": purpose, "brain_port": brain_port,
-                 "agent_port": agent_port, "generated": True}
-    AGENTS_JSON.write_text(json.dumps(reg, indent=2, ensure_ascii=False))
+    # 3) snapshot the composed system prompt so the Audit agent can detect drift
+    try:
+        from net_agents import prompt_snapshot
+        prompt_snapshot.snapshot(slug, persona)
+    except Exception:
+        pass
 
-    # 4) launch brain + forwarder
-    subprocess.Popen([HERMES, "-p", f"{slug}brain", "gateway", "run", "--force"],
+    # 4) launch brain + forwarder (brain_env strips the Telegram token so the new
+    #    gateway runs api_server only and won't fight the bot for it)
+    from net_agents.lifecycle import brain_env
+    subprocess.Popen([HERMES, "-p", f"{slug}brain", "gateway", "run", "--replace"],
                      stdout=open(STATE / f"hermes-{slug}brain.log", "a"),
-                     stderr=subprocess.STDOUT, cwd=str(ROOT))
+                     stderr=subprocess.STDOUT, cwd=str(ROOT), env=brain_env())
     subprocess.Popen([VENV_PY, "-m", "uvicorn", f"net_agents.{slug}:app",
                       "--port", str(agent_port)],
                      stdout=open(STATE / f"{slug}.log", "a"),

@@ -94,7 +94,13 @@ for profile, (port, persona, fixed_key, extras) in BRAINS.items():
         p=profile, proxy=PROXY, mcp=_mcp_block(persona, extras)))
     soul = HERE / "net_agents" / "context" / f"{persona}.md"
     if soul.exists():
-        (pdir / "SOUL.md").write_text(soul.read_text())
+        soul_text = soul.read_text()
+        (pdir / "SOUL.md").write_text(soul_text)
+        try:
+            from net_agents import prompt_snapshot
+            prompt_snapshot.snapshot(persona, soul_text)
+        except Exception:
+            pass
     # a generated key (orchbrain) is read from a state file by its agent
     if fixed_key is None:
         (HERE / "state").mkdir(exist_ok=True)

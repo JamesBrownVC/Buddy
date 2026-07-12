@@ -15,6 +15,7 @@ Run:  .venv/bin/python -m uvicorn terra_proxy:app --port 8650
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 
@@ -25,6 +26,8 @@ from fastapi.responses import JSONResponse, StreamingResponse
 UPSTREAM = "https://api.openai.com/v1"
 FORCE_MODEL = "gpt-5.6-terra"
 # Params gpt-5.6-terra rejects outright — drop them.
+# NOTE: 'tools'/'tool_choice' are deliberately NOT dropped — the router's
+# honeytoken tripwire depends on them surviving the proxy. See test_proxy.
 DROP = {"think", "thinking", "temperature", "top_p", "presence_penalty",
         "frequency_penalty", "logit_bias", "reasoning"}
 
@@ -32,6 +35,16 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("terra_proxy")
 
 app = FastAPI(title="terra proxy")
+
+
+def _system_text(messages) -> str:
+    """The leading system message's text, if any — the stable cacheable prefix."""
+    if isinstance(messages, list) and messages and isinstance(messages[0], dict):
+        m0 = messages[0]
+        if m0.get("role") == "system":
+            c = m0.get("content", "")
+            return c if isinstance(c, str) else json.dumps(c, sort_keys=True)
+    return ""
 
 
 def sanitise(body: dict) -> dict:
@@ -44,7 +57,34 @@ def sanitise(body: dict) -> dict:
         b.pop("max_tokens", None)
     # gpt-5.6-terra: tools only allowed with reasoning_effort == "none"
     b["reasoning_effort"] = "none"
+    # Prompt caching: a stable per-agent key (hash of the system prompt) routes
+    # repeat calls to the same cache node. It auto-rotates if the persona changes
+    # and never contains the prompt itself. Only set when a system prompt exists.
+    sys_text = _system_text(b.get("messages"))
+    if sys_text:
+        b.setdefault("prompt_cache_key",
+                     "buddy-" + hashlib.sha256(sys_text.encode("utf-8")).hexdigest()[:16])
+    # ask upstream to report token usage on the streamed path too
+    if b.get("stream"):
+        so = b.get("stream_options") or {}
+        so.setdefault("include_usage", True)
+        b["stream_options"] = so
     return b
+
+
+def _log_cache(body: dict, response: dict) -> None:
+    """Log ONLY token counts + the cache key — never prompt/persona/secrets.
+    This is the ground truth that caching actually fires."""
+    try:
+        u = response.get("usage") or {}
+        cached = (u.get("prompt_tokens_details") or {}).get("cached_tokens", 0)
+        prompt = u.get("prompt_tokens", 0)
+        if prompt:
+            log.info("cache key=%s prompt=%d cached=%d (%.0f%% hit)",
+                     body.get("prompt_cache_key", "-"), prompt, cached,
+                     100.0 * cached / prompt)
+    except Exception:
+        pass
 
 
 @app.post("/v1/chat/completions")
@@ -72,7 +112,10 @@ async def chat_completions(request: Request):
 
     async with httpx.AsyncClient(timeout=180) as client:
         r = await client.post(url, headers=headers, json=body)
-    return JSONResponse(status_code=r.status_code, content=r.json())
+    payload = r.json()
+    if r.status_code == 200:
+        _log_cache(body, payload)
+    return JSONResponse(status_code=r.status_code, content=payload)
 
 
 @app.get("/v1/models")

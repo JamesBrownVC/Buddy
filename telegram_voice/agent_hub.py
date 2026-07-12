@@ -182,31 +182,33 @@ def screen_context() -> dict:
 
 @app.post("/remember")
 def remember(f: Fact) -> dict:
-    """Voice-agent memory: the same bell-curve store the network agents use
-    (namespace 'voice'), plus the legacy memory.md for the dashboard."""
+    """Store a durable user fact in the BOOKKEEPER's memory — the one canonical
+    'user memory' the bookkeeper agent recalls and the dashboard shows. (It used
+    to write to a separate 'voice' namespace, so facts told on calls never
+    reached the bookkeeper or the dashboard.) Also appends memory.md for legacy."""
     with open(MEMORY_FILE, "a", encoding="utf-8") as fh:
         fh.write(f"- [{_now()}] {f.fact}\n")
     try:
         from net_agents import memory_store
-        memory_store.remember("voice", f.fact, importance=0.8)
+        memory_store.remember("bookkeeper", f.fact, importance=0.8)
     except Exception as e:  # never break a live call over memory plumbing
-        log.warning("voice memory_store write failed: %s", e)
+        log.warning("bookkeeper memory_store write failed: %s", e)
     log.info("remember: %s", f.fact)
     return {"ok": True}
 
 
 @app.post("/recall")
 def recall(q: Query) -> dict:
-    """Relevance × recency × importance recall from the voice agent's own
-    store — so calls pick up tasks tackled in earlier calls. Falls back to
+    """Relevance × recency × importance recall from the BOOKKEEPER's memory (the
+    unified user store), so calls pick up what was said before. Falls back to
     the legacy memory.md lines."""
     try:
         from net_agents import memory_store
-        hits = memory_store.recall("voice", q.query or "James current tasks", k=8)
+        hits = memory_store.recall("bookkeeper", q.query or "James current tasks", k=8)
         if hits:
             return {"memories": [f"- {h['text']}" for h in hits]}
     except Exception as e:
-        log.warning("voice memory_store recall failed: %s", e)
+        log.warning("bookkeeper memory_store recall failed: %s", e)
     if not MEMORY_FILE.exists():
         return {"memories": []}
     lines = MEMORY_FILE.read_text(encoding="utf-8").strip().splitlines()
@@ -226,6 +228,68 @@ def log_win(w: Win) -> dict:
 @app.post("/think")
 def think(q: Question) -> dict:
     return {"answer": brain_think(q.question)}
+
+
+class TryAnswer(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+    threshold: float = Field(0.7, ge=0.0, le=1.0)
+
+
+def _infer_answer(question: str, context: str) -> dict:
+    """One cheap model call that answers a question on the user's behalf ONLY if
+    it can do so confidently from known facts + general knowledge. Returns
+    {confidence, answer}. Never raises."""
+    key = os.getenv("OPENAI_API_KEY", "")
+    if not key:
+        return {"confidence": 0.0, "answer": ""}
+    system = (
+        "You answer a question on the user's behalf so a voice assistant does not "
+        "have to interrupt them. Use ONLY the known facts about the user below plus "
+        "uncontroversial general knowledge. If you can answer with at least 70% "
+        "confidence, give a short answer. If you cannot, set confidence below 0.7 "
+        "and leave answer empty. Never guess personal facts you were not told. "
+        'Respond as strict JSON: {"confidence": <0..1>, "answer": "<short or empty>"}.')
+    user = (f"Known facts about the user:\n{context or '(none)'}\n\n"
+            f"Question the assistant was about to ask the user: {question}")
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    extra = ({"max_completion_tokens": 200} if model.startswith(("gpt-5", "o"))
+             else {"temperature": 0.2, "max_tokens": 200})
+    try:
+        r = httpx.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {key}"},
+            json={"model": model, "response_format": {"type": "json_object"},
+                  "messages": [{"role": "system", "content": system},
+                               {"role": "user", "content": user}], **extra},
+            timeout=20)
+        r.raise_for_status()
+        data = json.loads(r.json()["choices"][0]["message"]["content"])
+        return {"confidence": float(data.get("confidence", 0) or 0),
+                "answer": str(data.get("answer", "")).strip()}
+    except Exception as e:
+        log.warning("try_answer inference failed: %s", e)
+        return {"confidence": 0.0, "answer": ""}
+
+
+@app.post("/agents/try_answer")
+def try_answer(t: TryAnswer) -> dict:
+    """Inference gate: before the voice agent asks the user a clarifying question,
+    it asks HERE first. We recall what we know about the user and try to infer the
+    answer; only if we're >= threshold-confident do we answer, so the user is only
+    interrupted for questions that genuinely need them. Returns
+    {answered, answer?, confidence}."""
+    context = ""
+    try:
+        from net_agents import memory_store
+        hits = memory_store.recall("bookkeeper", t.question, k=6)
+        context = "\n".join(f"- {h['text']}" for h in hits)
+    except Exception:
+        pass
+    result = _infer_answer(t.question, context)
+    conf = float(result.get("confidence", 0) or 0)
+    if conf >= t.threshold and result.get("answer"):
+        return {"answered": True, "answer": result["answer"], "confidence": conf}
+    return {"answered": False, "confidence": conf}
 
 
 @app.post("/notify_telegram")
@@ -291,6 +355,9 @@ class AgentAsk(BaseModel):
     # who is asking: another agent's name, or "external" for a top-level task.
     # This turns the exchange log into a task tree (macro task -> sub-tasks).
     from_: str = Field("external", alias="from")
+    # delegation depth, incremented at each hop, so a router->orch->agent chain
+    # (or an A->B->A loop) is bounded rather than unbounded.
+    hop: int = Field(0, ge=0)
 
     class Config:
         populate_by_name = True
@@ -320,6 +387,22 @@ def _looks_down(reply: str) -> bool:
     return ("hermes runtime is unavailable" in r
             or ("failed:" in r and ("connect" in r or "refused" in r
                                     or "timed out" in r)))
+
+
+def _prewarm_core() -> None:
+    """Warm the core agents (orchestrator/browser/bookkeeper) the moment a call
+    starts, so they're ready by the time the user asks — a cold Hermes brain
+    takes seconds to boot. Fire-and-forget daemon thread; never blocks the call."""
+    import threading
+
+    def _run() -> None:
+        try:
+            from net_agents import lifecycle
+            lifecycle.warm_core()
+        except Exception as e:
+            log.warning("prewarm failed: %s", e)
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 class WakeReq(BaseModel):
@@ -403,7 +486,24 @@ async def agents_ask(a: AgentAsk) -> dict:
     level = "macro" if asker == "external" else "micro"
     log.info("agent-exchange %s -> %s: %s", asker, a.agent, a.message[:120])
     t0 = _time.time()
-    reply = await anyio.to_thread.run_sync(ask_agent, a.agent, a.message)
+
+    async def _forward():
+        return await anyio.to_thread.run_sync(ask_agent, a.agent, a.message)
+
+    # Bound delegation depth regardless of the dispatcher, so a router->orch loop
+    # can't recurse unbounded through the hub.
+    from net_agents import dispatcher
+    if a.hop >= dispatcher.HOP_DEPTH_CAP:
+        return {"reply": "hop-depth cap reached; request stopped."}
+
+    # Opt-in backpressure/LB path (BUDDY_DISPATCHER=1): per-agent concurrency
+    # limit + bounded queue + circuit breaker, so one slow brain can't starve
+    # every agent. Off by default => identical to the original behaviour.
+    if dispatcher.enabled():
+        reply = (await dispatcher.get().dispatch(
+            a.agent, _forward, depth=a.hop)).get("reply", "")
+    else:
+        reply = await _forward()
     # Mailbox auto-wake: a message to a dead agent revives it, then retries.
     if _looks_down(reply):
         from net_agents import lifecycle
@@ -444,6 +544,7 @@ async def webhook_ring(r: RingReq) -> dict:
     """A remote agent decides the user needs a call -> Hermes rings them."""
     from call_live import ring
     log.info("webhook_ring from %s: %s", r.source, r.nudge[:120])
+    _prewarm_core()                     # warm core agents before the user answers
     await ring(r.nudge)
     await broadcast("ring", {"nudge": r.nudge, "source": r.source})
     return {"ok": True, "rang": True}
@@ -503,6 +604,7 @@ def _elevenlabs_signed_url() -> str:
 @app.post("/api/voice-session")
 def voice_session() -> dict:
     """Create a 15-minute ElevenLabs session for an authenticated dashboard."""
+    _prewarm_core()                     # warm core agents while the call connects
     return {"signed_url": _elevenlabs_signed_url()}
 
 
@@ -525,6 +627,7 @@ def answer(nudge: str = "", expires: int = 0, sig: str = "") -> HTMLResponse:
             "</body></html>",
             status_code=403,
         )
+    _prewarm_core()                     # warm core agents as the call page loads
     signed_url = _elevenlabs_signed_url()
     import secrets as _secrets
     nonce = _secrets.token_urlsafe(16)
@@ -892,6 +995,32 @@ def get_agent_doc(name: str = "") -> dict:
         return {"name": name, "found": False, "markdown": ""}
 
 
+def _bookkeeper_items() -> tuple[list[dict], list[dict]]:
+    """The bookkeeper's live memory split into (working, longterm) in the shape
+    the dashboard expects. Reads the bell-curve JSONL store; never raises."""
+    try:
+        from net_agents import memory_store
+        items = memory_store._load("bookkeeper")
+    except Exception:
+        return [], []
+    working, longterm = [], []
+    for it in items:
+        try:                            # one bad record must not hide the drawer
+            if not isinstance(it, dict):
+                continue
+            ts = it.get("ts", 0)
+            created = (dt.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+                       if isinstance(ts, (int, float)) and ts else "")
+            row = {"text": it.get("text", ""), "status": "active", "created": created}
+            if it.get("longterm"):
+                longterm.append({"text": row["text"], "status": "active", "date": created})
+            else:
+                working.append(row)
+        except Exception:
+            continue
+    return working, longterm
+
+
 @app.get("/api/agent-memory")
 def get_agent_memory(name: str = "") -> dict:
     """Read-only view of an agent's live stored memory, for the dashboard
@@ -908,12 +1037,18 @@ def get_agent_memory(name: str = "") -> dict:
     net_state_dir = Path(__file__).resolve().parent / "net_agents" / "state"
     try:
         if raw in ("bookkeeper", "memory", "book-keeper"):
-            bk_file = net_state_dir / "bookkeeper.json"
-            if not bk_file.is_file():
-                return {"name": "bookkeeper", "found": False}
-            bk_data = json.loads(bk_file.read_text(encoding="utf-8"))
-            raw_working = bk_data.get("working") or []
-            raw_longterm = bk_data.get("longterm") or []
+            # Prefer the LIVE bell-curve store the bookkeeper agent and the voice
+            # /remember tool both write to (state/memory/bookkeeper.jsonl); fall
+            # back to the legacy structured seed file only if that's empty. This
+            # is what makes facts told on a call actually show on the dashboard.
+            raw_working, raw_longterm = _bookkeeper_items()
+            if not raw_working and not raw_longterm:
+                bk_file = net_state_dir / "bookkeeper.json"
+                if not bk_file.is_file():
+                    return {"name": "bookkeeper", "found": False}
+                bk_data = json.loads(bk_file.read_text(encoding="utf-8"))
+                raw_working = bk_data.get("working") or []
+                raw_longterm = bk_data.get("longterm") or []
             working = [
                 {
                     "text": i.get("text", ""),

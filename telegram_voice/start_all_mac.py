@@ -74,10 +74,13 @@ def main() -> None:
                     brains.append((f"{name}brain", v["brain_port"]))
     except Exception:
         pass
+    from net_agents.lifecycle import brain_env
     for profile, port in brains:
         if (Path.home() / ".hermes" / "profiles" / profile).exists():
-            spawn([str(HERMES), "-p", profile, "gateway", "run", "--force"],
-                  f"hermes-{profile}.log")
+            # --replace clears stale/hijacked instances; brain_env strips the
+            # Telegram token so the gateway runs api_server only (no bot conflict)
+            spawn([str(HERMES), "-p", profile, "gateway", "run", "--replace"],
+                  f"hermes-{profile}.log", env=brain_env())
         else:
             print(f"      (profile {profile} missing — skipped)")
 

@@ -18,6 +18,8 @@ from pathlib import Path
 
 import httpx
 
+from net_agents.atomicio import locked
+
 ROOT = Path(__file__).resolve().parent.parent
 MEM_DIR = ROOT / "state" / "memory"
 KEY = os.getenv("OPENAI_API_KEY", "")
@@ -50,20 +52,48 @@ def _file(agent: str) -> Path:
 
 
 def remember(agent: str, text: str, importance: float = 0.5,
-             longterm: bool = False) -> dict:
-    rec = {"ts": int(time.time()), "text": text.strip(),
+             longterm: bool = False, dedupe: bool = True) -> dict:
+    text = text.strip()
+    # Compute the embedding (a network call) BEFORE taking the lock — never hold
+    # the file lock across I/O we don't control.
+    rec = {"ts": int(time.time()), "text": text,
            "importance": max(0.0, min(1.0, float(importance))),
            "longterm": bool(longterm), "emb": _embed(text)}
-    with open(_file(agent), "a", encoding="utf-8") as f:
-        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    path = _file(agent)
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    # Hold ONE lock across the dedupe-read AND the append, so two concurrent
+    # writers (e.g. a replica + the bookkeeper agent) can't both pass the dedupe
+    # check and double-write, and can't interleave bytes on a >4KB embedding line.
+    try:
+        with locked(lock_path):
+            if dedupe and any(it.get("text") == text for it in _load(agent)):
+                return rec
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception:
+        pass                            # memory is best-effort, never a hard fail
     return rec
 
 
 def _load(agent: str) -> list[dict]:
+    """Load an agent's memory, skipping any single corrupt line rather than
+    discarding the whole file. A lone half-written line must never blank an
+    agent's entire recall."""
+    path = _file(agent)
     try:
-        return [json.loads(l) for l in _file(agent).read_text(encoding="utf-8").splitlines() if l.strip()]
+        raw = path.read_text(encoding="utf-8")
     except Exception:
         return []
+    out: list[dict] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(json.loads(line))
+        except Exception:
+            continue                    # skip this line only, keep the rest
+    return out
 
 
 def recall(agent: str, query: str, k: int = 6, now: int | None = None) -> list[dict]:

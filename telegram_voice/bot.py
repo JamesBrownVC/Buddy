@@ -64,6 +64,26 @@ async def cmd_call(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+async def cmd_unlock(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Owner-only: clear a security lockdown engaged by repeated injection trips.
+    This is the manual reset the router's lockdown alert points the user to."""
+    owner = config.get_chat_id()
+    # Fail CLOSED: if no owner is paired, refuse /unlock from everyone (an
+    # unpaired bot must not let an arbitrary chat clear a security lockdown).
+    if not owner or str(update.effective_chat.id) != str(owner):
+        return
+    try:
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from net_agents import lockdown
+        lockdown.save(lockdown.reset())
+        await update.message.reply_text("🔓 Security lockdown cleared. "
+                                        "High-power agents are available again.")
+    except Exception as e:
+        await update.message.reply_text(f"Couldn't clear the lockdown: {e}")
+
+
 async def _reply_spoken(update: Update, user_text: str) -> None:
     reply = think(user_text)
     log.info("brain reply: %s", reply[:200])
@@ -112,11 +132,13 @@ def main() -> None:
         await a.bot.set_my_commands([
             ("call", "start a live voice call with Hermes"),
             ("start", "(re)connect Hermes to this chat"),
+            ("unlock", "clear a security lockdown"),
         ])
 
     app = Application.builder().token(config.BOT_TOKEN).post_init(_post_init).build()
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("call", cmd_call))
+    app.add_handler(CommandHandler("unlock", cmd_unlock))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, on_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
     log.info("Hermes voice bridge polling… send /start to the bot from your phone.")

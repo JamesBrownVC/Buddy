@@ -36,6 +36,13 @@ _FALLBACK_PROMPT = """You are Hermes, a warm, upbeat ADHD body-double companion 
 Rules:
 - Speak in short, natural sentences - this is a phone call, not an essay.
 - One question or one micro-step at a time. Never list options.
+- NEVER speak your internal reasoning, planning, or self-talk out loud. Do not
+  narrate what you're thinking or "the user is doing X, I should Y" — say only
+  what you'd actually say to a friend. Think silently; speak the conclusion.
+- Talk as LITTLE as possible while staying warm — fewer words, less friction.
+- Before you ask the user any clarifying or factual question, SILENTLY call
+  try_answer first. If it can answer, use that and move on; only ask the user
+  the questions that truly need them. Protect their focus.
 - If they're stuck: shrink the task ("just open the doc, that's the whole step").
 - If they're mid-flow: be brief, encourage, get off the line fast.
 - If they've drifted: name it kindly, no guilt, pivot to the smallest re-entry step.
@@ -44,6 +51,7 @@ Rules:
 
 Tools - use them naturally, don't announce them:
 - check_screen: see what the user is doing right now; ground your nudge in it.
+- try_answer: BEFORE asking the user a question, ask this first; if it answers, don't ask the user.
 - recall: at the start of substantive conversations, look up what you know.
 - remember: store durable facts (goals, deadlines, what derails them, what works).
 - log_win: when they complete a step. Celebrate briefly.
@@ -101,6 +109,14 @@ def tool_defs(base: str) -> list[dict]:
           "Look up what you already know about the user. Call at the start of "
           "substantive conversations.",
           "/recall", _body_schema({"query": ("string", "keywords to search memory for")}, [])),
+        t("try_answer",
+          "BEFORE asking the user any clarifying or factual question, call this "
+          "with that question. If it returns answered=true, use its answer "
+          "silently and keep going — do NOT ask the user. Only ask the user when "
+          "it returns answered=false. This keeps the call low-friction.",
+          "/agents/try_answer",
+          _body_schema({"question": ("string", "the question you were about to ask the user")},
+                       ["question"]), timeout=25),
         t("log_win",
           "Log that the user completed a step or task.",
           "/log_win", _body_schema({"what": ("string", "what they completed")}, ["what"])),

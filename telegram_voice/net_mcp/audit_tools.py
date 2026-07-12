@@ -10,6 +10,7 @@ import json
 
 from mcp.server.fastmcp import FastMCP
 
+from net_agents import prompt_snapshot, security_events
 from net_agents.audit_data import performance_summary, read_tasks
 
 mcp = FastMCP("audit_tools")
@@ -37,6 +38,33 @@ def performance() -> str:
     failure rate, average/max latency, plus the worst tasks (failed, empty, or
     very slow). Use this to spot recurring problems worth fixing."""
     return json.dumps(performance_summary(), indent=2)
+
+
+@mcp.tool()
+def list_prompts() -> str:
+    """List the agents whose system prompt (SOUL) has a stored snapshot you can
+    review for drift or injected instructions."""
+    names = prompt_snapshot.list_agents()
+    return "\n".join(names) if names else "no prompt snapshots yet"
+
+
+@mcp.tool()
+def read_prompt(agent: str) -> str:
+    """Read an agent's snapshotted system prompt (its persona/SOUL). Use this to
+    audit what an agent was actually told to do."""
+    text = prompt_snapshot.read(agent)
+    return text or f"no snapshot for '{agent}'"
+
+
+@mcp.tool()
+def security_log(limit: int = 25) -> str:
+    """Recent security events: suspicious requests, honeytoken trips (attempted
+    prompt injections the router blocked), and lockdown transitions. Review these
+    to judge whether the network is under attack and whether the response fit."""
+    events = security_events.recent(limit)
+    if not events:
+        return "no security events logged"
+    return json.dumps(events, indent=2)
 
 
 if __name__ == "__main__":
