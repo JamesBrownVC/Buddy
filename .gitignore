@@ -16,3 +16,4 @@ index.backup-*.html
 
 # builder-generated agents (runtime artifacts)
 telegram_voice/state/*.key
+*.CUSTOM-*

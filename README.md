@@ -61,10 +61,21 @@ Buddy is a mesh of small, single-purpose agents behind one hub, running entirely
                         └────────────────────────────────┘
 ```
 
+### Every agent is a Hermes autonomous agent
+
+Each specialist is a **Hermes agent** — its own [Hermes](https://hermes-agent.nousresearch.com) instance (profile) running gpt-5.6-terra, with a persona (`SOUL.md`), its own tools, and its own autonomous agent-loop. The `net_agents/<name>.py` service is a *thin forwarder* (`hermes_service.make_agent_app`) that hands the text to that Hermes runtime and returns whatever the agent autonomously decides — **no reasoning lives in the Python.**
+
+Agents collaborate through **MCP tools**, not hard-coded orchestration:
+- `net_mcp/agent_bridge.py` gives every agent `list_agents` + `ask_agent(agent, text)`, so a Hermes agent *decides for itself* to message a peer over text (verified: the bookkeeper agent autonomously calls the browser agent mid-task).
+- `net_mcp/browser_tools.py` gives the browser agent `web_search` / `open_url` that drive the visible stealth container.
+- `net_mcp/memory_tools.py` gives the bookkeeper agent `remember` / `recall` / `complete` over the shared memory store.
+
+So the mesh is genuinely autonomous agents talking to autonomous agents — each async, each deciding how to handle a request and when to delegate.
+
 ### Design principles
 
-1. **Agents are processes, not prompts.** Each agent is an independent service with its own persona document (`net_agents/context/<agent>.md`), its own state, and its own brain. Kill one, the rest keep running; the hub degrades gracefully.
-2. **Text in, text out.** The `/ask` contract is the entire interface. Any agent (or human, or curl) can talk to any other agent. Adding an agent = one file + one registry entry.
+1. **Agents are Hermes runtimes, not prompts.** Each agent is an independent Hermes process with its own persona, tools, and MCP peer-messaging. Kill one, the rest keep running; the hub degrades gracefully.
+2. **Text in, text out.** The `/ask` contract is the entire interface. Any agent (or human, or curl) can talk to any other agent. Adding an agent = one Hermes profile + a two-line forwarder + one registry entry — which is exactly what the Builder automates.
 3. **The browser is real.** No headless scraping API pretending to be "browsing" — a stealth Firefox (Camoufox) with real OS-level input runs in Docker, and the dashboard streams its screen over noVNC. When Buddy looks something up, you can *watch it*.
 4. **Memory models attention, not storage.** The bookkeeper weights items on a bell curve around *now* (working memory) with a separate long-term store that only decays on completion or expiry — mirroring what ADHD working memory can't do.
 5. **Fallback chains everywhere.** Every brain call has a fallback (local Hermes runtime → cloud model → rule-based reply). A live voice call must never hang on a single point of failure.

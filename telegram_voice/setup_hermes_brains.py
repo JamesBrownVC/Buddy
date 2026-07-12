@@ -30,10 +30,13 @@ PROXY = os.getenv("TERRA_PROXY_URL", "http://127.0.0.1:8650/v1")
 # profile -> (api port, persona md, fixed API key matching the agent's default;
 # None -> generate a strong key and write it to state/<profile>.key)
 BRAINS = {
-    "buddybrain": (8643, "bookkeeper", "buddybrain-local"),
-    "browserbrain": (8644, "browser", "browserbrain-local"),
-    "orchbrain": (8645, "orchestrator", None),
+    # profile: (api port, persona/self-name, fixed key or None, extra MCP tools)
+    "buddybrain": (8643, "bookkeeper", "buddybrain-local", ["net_mcp.memory_tools"]),
+    "browserbrain": (8644, "browser", "browserbrain-local", ["net_mcp.browser_tools"]),
+    "orchbrain": (8645, "orchestrator", None, []),
 }
+
+HVENV = str(Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin" / "python")
 
 CONFIG = """# {p} — Hermes brain (gpt-5.6-terra via terra proxy)
 model:
@@ -48,12 +51,28 @@ providers:
     api_mode: "chat_completions"
 agent:
   max_turns: 20
-"""
+mcp_servers:
+{mcp}"""
+
+
+def _mcp_block(self_name: str, extras: list[str]) -> str:
+    servers = [("agent_bridge", "net_mcp.agent_bridge")] + \
+        [(m.split(".")[-1], m) for m in extras]
+    out = []
+    for sid, mod in servers:
+        out += [f"  {sid}:",
+                f'    command: "{HVENV}"',
+                f'    args: ["-m", "{mod}"]',
+                "    env:",
+                '      HERMES_HUB: "http://127.0.0.1:8484"',
+                f'      SELF_AGENT: "{self_name}"',
+                f'      PYTHONPATH: "{HERE}"']
+    return "\n".join(out) + "\n"
 
 if not OPENAI_KEY:
     raise SystemExit("Set OPENAI_API_KEY in .env first.")
 
-for profile, (port, persona, fixed_key) in BRAINS.items():
+for profile, (port, persona, fixed_key, extras) in BRAINS.items():
     subprocess.run([HERMES, "profile", "create", profile,
                     "--description", f"Hermes brain ({persona})"],
                    capture_output=True, text=True, timeout=90)
@@ -63,7 +82,8 @@ for profile, (port, persona, fixed_key) in BRAINS.items():
         f"OPENAI_API_KEY={OPENAI_KEY}\nAPI_SERVER_ENABLED=true\n"
         f"API_SERVER_KEY={key}\nAPI_SERVER_PORT={port}\n")
     os.chmod(pdir / ".env", 0o600)
-    (pdir / "config.yaml").write_text(CONFIG.format(p=profile, proxy=PROXY))
+    (pdir / "config.yaml").write_text(CONFIG.format(
+        p=profile, proxy=PROXY, mcp=_mcp_block(persona, extras)))
     soul = HERE / "net_agents" / "context" / f"{persona}.md"
     if soul.exists():
         (pdir / "SOUL.md").write_text(soul.read_text())
