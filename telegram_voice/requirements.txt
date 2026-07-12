@@ -5,7 +5,7 @@ uvicorn==0.51.0
 httpx==0.28.1
 websockets==16.1
 pydantic==2.13.4
-python-dotenv==1.2.2
+python-dotenv==1.2.2  # keep >=1.2.2: CVE-2026-28684 (symlink following in set_key)
 certifi==2026.6.17
 
 # Telegram voice bridge
