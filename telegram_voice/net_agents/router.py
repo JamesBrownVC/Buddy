@@ -75,17 +75,37 @@ def _pick(message: str, agents: list[dict]) -> str:
         return ""
 
 
+def _escalate(message: str, asker: str) -> dict:
+    """No single agent fit — escalate to the orchestrator, which force-routes to
+    the best fit or decides to build a new agent (builder) / tool (toolsmith)."""
+    if (asker or "").strip().lower() == "orchestrator":
+        return {"reply": "No agent in the network is suited to that."}
+    try:
+        reply = httpx.post(
+            f"{HUB}/agents/ask",
+            json={"agent": "orchestrator",
+                  "message": f"[Escalated by the router — no single existing "
+                             f"agent could clearly handle this. Force-route it "
+                             f"to the best fit, or build a new agent/tool if a "
+                             f"genuinely new capability is needed.] {message}"},
+            timeout=200).json().get("reply", "")
+        return {"reply": f"[escalated to orchestrator] {reply}"}
+    except Exception as e:
+        log_failure("router", "escalate_failed", str(e), {"message": message[:150]})
+        return {"reply": f"No agent fit and the orchestrator was unreachable: {e}"}
+
+
 @app.post("/ask")
 def ask(a: Ask) -> dict:
     agents = _roster(a.from_ or "")
     if not agents:
-        return {"reply": "No agents available to route to right now."}
+        return _escalate(a.message, a.from_ or "")
     name = _pick(a.message, agents)
     valid = {x["name"].lower() for x in agents}
     if name not in valid:                       # tolerate fuzzy model output
         name = next((x["name"] for x in agents if x["name"].lower() in name), "")
     if not name or name == "none":
-        return {"reply": "No agent in the network is suited to that."}
+        return _escalate(a.message, a.from_ or "")
     try:
         reply = httpx.post(f"{HUB}/agents/ask",
                            json={"agent": name, "message": a.message},
@@ -93,7 +113,7 @@ def ask(a: Ask) -> dict:
         return {"reply": f"[routed to {name}] {reply}"}
     except Exception as e:
         log_failure("router", "forward_failed", str(e), {"target": name})
-        return {"reply": f"Routed to {name} but couldn't reach it: {e}"}
+        return _escalate(a.message, a.from_ or "")
 
 
 @app.get("/health")
