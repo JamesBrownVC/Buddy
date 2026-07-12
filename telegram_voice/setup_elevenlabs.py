@@ -194,7 +194,8 @@ def provision_subagents(c: httpx.Client) -> None:
         if r.status_code >= 400:
             raise SystemExit(f"subagent {name}: {r.status_code} {r.text}")
         print(f"subagent {action}: {name} -> {aid}")
-        registry[name] = {"type": "elevenlabs", "agent_id": aid,
+        reg_key = "planner-voice" if name == "planner" else name
+        registry[reg_key] = {"type": "elevenlabs", "agent_id": aid,
                           "description": spec["description"]}
     registry.setdefault("demo-echo", {
         "type": "echo",

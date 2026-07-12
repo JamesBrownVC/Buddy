@@ -182,14 +182,31 @@ def screen_context() -> dict:
 
 @app.post("/remember")
 def remember(f: Fact) -> dict:
+    """Voice-agent memory: the same bell-curve store the network agents use
+    (namespace 'voice'), plus the legacy memory.md for the dashboard."""
     with open(MEMORY_FILE, "a", encoding="utf-8") as fh:
         fh.write(f"- [{_now()}] {f.fact}\n")
+    try:
+        from net_agents import memory_store
+        memory_store.remember("voice", f.fact, importance=0.8)
+    except Exception as e:  # never break a live call over memory plumbing
+        log.warning("voice memory_store write failed: %s", e)
     log.info("remember: %s", f.fact)
     return {"ok": True}
 
 
 @app.post("/recall")
 def recall(q: Query) -> dict:
+    """Relevance × recency × importance recall from the voice agent's own
+    store — so calls pick up tasks tackled in earlier calls. Falls back to
+    the legacy memory.md lines."""
+    try:
+        from net_agents import memory_store
+        hits = memory_store.recall("voice", q.query or "James current tasks", k=8)
+        if hits:
+            return {"memories": [f"- {h['text']}" for h in hits]}
+    except Exception as e:
+        log.warning("voice memory_store recall failed: %s", e)
     if not MEMORY_FILE.exists():
         return {"memories": []}
     lines = MEMORY_FILE.read_text(encoding="utf-8").strip().splitlines()
@@ -337,6 +354,43 @@ def agents_status() -> dict:
     summary = ("every agent is healthy" if not down
                else "DOWN: " + ", ".join(down))
     return {"summary": summary, "agents": rows}
+
+
+# ── Planner heartbeat: the planner checks in on James at its own initiative ──
+# Every PLANNER_HEARTBEAT_MIN (default 120) during waking hours the hub nudges
+# the planner, which then decides for itself: do nothing, send a Telegram note,
+# or ring James for a live call. Disable with PLANNER_HEARTBEAT=0.
+
+@app.on_event("startup")
+async def _planner_heartbeat() -> None:
+    import asyncio
+
+    async def beat() -> None:
+        import anyio
+        from agents_registry import ask_agent
+        interval = max(15, int(os.getenv("PLANNER_HEARTBEAT_MIN", "120"))) * 60
+        await asyncio.sleep(120)  # let the network come up first
+        while True:
+            hour = dt.datetime.now().hour
+            if 8 <= hour < 21 and os.getenv("PLANNER_HEARTBEAT", "1") == "1":
+                try:
+                    msg = ("Heartbeat from the hub. On your own initiative: check "
+                           "your memory (and the bookkeeper if you need context on "
+                           "what James is working on), then choose ONE: do nothing "
+                           "(reply exactly HEARTBEAT_OK), send a short telegram_note, "
+                           "or ring_user for a live check-in. Respect your rules: "
+                           "max 3 calls/day, never 22:00-08:00, never repeat yourself.")
+                    reply = await anyio.to_thread.run_sync(ask_agent, "planner", msg)
+                    _log_task({"ts": _now(), "level": "macro", "from": "heartbeat",
+                               "agent": "planner", "ask": "planner heartbeat",
+                               "reply": (reply or "")[:500], "ms": 0,
+                               "ok": bool(reply and reply.strip())})
+                    log.info("planner heartbeat: %s", (reply or "")[:120])
+                except Exception as e:
+                    log.warning("planner heartbeat failed: %s", e)
+            await asyncio.sleep(interval)
+
+    asyncio.get_event_loop().create_task(beat())
 
 
 @app.post("/agents/ask")
@@ -892,6 +946,7 @@ def api_agents() -> dict:
     static = {
         "bookkeeper": 9102, "browser": 9103, "orchestrator": 9104,
         "builder": 9105, "repair": 9106, "toolsmith": 9107, "router": 9108, "audit": 9109,
+        "personal": 9112,
     }
     reg = {}
     try:

@@ -32,6 +32,7 @@ FIRST_CLASS = {
     "toolsmith":    {"port": 9107, "profile": "toolsmithbrain"},
     "router":       {"port": 9108, "profile": None},   # lightweight, no brain
     "audit":        {"port": 9109, "profile": "auditbrain"},
+    "personal":     {"port": 9112, "profile": "personalbrain"},
 }
 
 

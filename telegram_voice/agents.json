@@ -1,9 +1,4 @@
 {
-  "planner": {
-    "type": "elevenlabs",
-    "agent_id": "agent_9601kx8gc0dze86vxhk63dmp9f1j",
-    "description": "breaks any goal into tiny next steps"
-  },
   "memory-coach": {
     "type": "elevenlabs",
     "agent_id": "agent_2001kx8gc22kexz93k8zfz9fp57e",
@@ -26,7 +21,7 @@
   "browser": {
     "type": "http",
     "url": "http://localhost:9103/ask",
-    "description": "operates the LIVE WEB through a real stealth browser: looks up current facts/news/prices/weather, reads any website, AND logs into and acts on the user's web apps \u2014 WhatsApp Web, Gmail and other email, Slack, Notion, Google, calendars, etc. (open, read, click, type, fill forms). Route here anything needing the live web or any online app/service."
+    "description": "operates the LIVE WEB through a real stealth browser: looks up current facts/news/prices/weather, reads any website, AND logs into and acts on the user's web apps — WhatsApp Web, Gmail and other email, Slack, Notion, Google, calendars, etc. (open, read, click, type, fill forms). Route here anything needing the live web or any online app/service."
   },
   "orchestrator": {
     "type": "http",
@@ -62,8 +57,26 @@
   "audit": {
     "type": "http",
     "url": "http://localhost:9109/ask",
-    "description": "reviews how the network performs (each action vs its ask, latency, failures), REVIVES dead or unresponsive agents itself (wake/restart services and brains, even remotely), and requests surgical improvements \u2014 tools from the toolsmith, agents from the builder",
+    "description": "reviews how the network performs (each action vs its ask, latency, failures), REVIVES dead or unresponsive agents itself (wake/restart services and brains, even remotely), and requests surgical improvements — tools from the toolsmith, agents from the builder",
     "brain_port": 8649,
     "agent_port": 9109
+  },
+  "personal": {
+    "type": "http",
+    "url": "http://localhost:9112/ask",
+    "description": "the PRIVATE agent — runs a fully LOCAL model on this machine (nothing leaves the computer) with its OWN logged-in browser session. Route here ANYTHING touching James's personal data: reading his emails, WhatsApp/private messages, personal documents, account contents. Never send personal-data tasks to any other agent."
+  },
+  "planner-voice": {
+    "type": "elevenlabs",
+    "agent_id": "agent_9601kx8gc0dze86vxhk63dmp9f1j",
+    "description": "text-only voice subagent that breaks a goal into tiny steps (used by the voice agent)"
+  },
+  "planner": {
+    "type": "http",
+    "url": "http://localhost:9110/ask",
+    "description": "James's proactive executive-function planner for tracking work, breaking goals into next steps, and choosing timely check-ins.",
+    "brain_port": 8660,
+    "agent_port": 9110,
+    "generated": true
   }
 }
