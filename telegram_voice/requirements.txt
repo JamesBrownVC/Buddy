@@ -17,4 +17,4 @@ edge-tts==7.2.8
 
 # Voice-mode extras (optional; CLI push-to-talk)
 sounddevice==0.5.5
-numpy==2.4.6
+numpy==2.5.1
