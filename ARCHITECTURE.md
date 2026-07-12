@@ -134,6 +134,7 @@ If the target's service or brain is dead, the hub **auto-wakes** it and retries
 | tunnel URL dead | quick tunnels rotate on cloudflared restart | re-run launcher step / `setup_elevenlabs.py <new url>` |
 | browser "falls back to duckduckgo" | browser brain down or container down | wake browser; `docker start browser` |
 | voice page shows no button | widget missing `agent-id` or EL misconfig | see `/answer` in agent_hub.py; don't rewrite the page |
+| call connects but 0 turns, exact ~51s, "Requested device not found" | no microphone in that browser (Telegram in-app webview) | open the link in a real browser; the page shows this guidance itself |
 
 ## Secrets & privacy invariants
 

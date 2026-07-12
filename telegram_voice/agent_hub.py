@@ -110,7 +110,7 @@ async def _auth(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["Permissions-Policy"] = "camera=(), geolocation=()"
+    response.headers.setdefault("Permissions-Policy", "camera=(), geolocation=()")
     if request.url.path != "/health":
         response.headers["Cache-Control"] = "no-store"
     return response
@@ -512,8 +512,22 @@ def answer(nudge: str = "", expires: int = 0, sig: str = "") -> HTMLResponse:
     Hermes 'rings' via Telegram with a signed link here; ?nudge= is passed to
     the agent as the {{nudge_context}} dynamic variable."""
     if len(nudge) > 1000 or not verify_answer_link(nudge, expires, sig):
-        raise HTTPException(status_code=403, detail="invalid or expired call link")
+        return HTMLResponse(
+            "<!doctype html><html><head>"
+            '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            "<title>Link expired</title></head>"
+            '<body style="margin:0;min-height:100vh;display:flex;flex-direction:column;'
+            "align-items:center;justify-content:center;background:#0f1117;color:#eee;"
+            'font-family:system-ui;gap:12px;text-align:center;padding:24px">'
+            "<div style='font-size:56px'>⏳</div><h2>This call link has expired</h2>"
+            "<p>Call links are short-lived for your security.<br>"
+            "Send <b>/call</b> to Hermes on Telegram to get a fresh one.</p>"
+            "</body></html>",
+            status_code=403,
+        )
     signed_url = _elevenlabs_signed_url()
+    import secrets as _secrets
+    nonce = _secrets.token_urlsafe(16)
     dyn = html.escape(json.dumps({"nudge_context": nudge}), quote=True)
     signed_attr = html.escape(signed_url, quote=True)
     # the widget needs agent-id to render its button; the signed URL only
@@ -527,27 +541,42 @@ def answer(nudge: str = "", expires: int = 0, sig: str = "") -> HTMLResponse:
  justify-content:center;background:#0f1117;color:#eee;font-family:system-ui;gap:12px}}
  .pulse{{font-size:64px;animation:p 1.2s infinite}}
  @keyframes p{{50%{{transform:scale(1.15)}}}}
+ #micwarn{{display:none;color:#ff8080;max-width:360px;text-align:center;
+ background:#2a1518;border:1px solid #5c2a2e;border-radius:10px;padding:12px}}
 </style></head><body>
 <div class="pulse">📞</div>
 <h2>Hermes is calling</h2>
 <p>You are about to speak with an AI assistant. Voice is processed by ElevenLabs;
 Buddy is configured not to retain call audio and to delete hosted conversation data.</p>
+<div id="micwarn"></div>
 <p>Tap the widget below to answer</p>
 <elevenlabs-convai agent-id="{agent_attr}" signed-url="{signed_attr}" dynamic-variables='{dyn}'></elevenlabs-convai>
 <script src="https://unpkg.com/@elevenlabs/convai-widget-embed@0.14.8" async></script>
+<script nonce="{nonce}">
+navigator.mediaDevices.getUserMedia({{audio:true}})
+  .then(function(s){{ s.getTracks().forEach(function(t){{t.stop();}}); }})
+  .catch(function(e){{
+    var w = document.getElementById('micwarn');
+    w.style.display = 'block';
+    w.innerHTML = '\\ud83c\\udf99\\ufe0f <b>No microphone available here</b> (' + e.name + ').<br>' +
+      'You are probably inside the Telegram in-app browser.<br>' +
+      'Tap <b>\\u22ef \\u2192 Open in Browser</b> (Safari/Chrome), then answer the call there.';
+  }});
+</script>
 </body></html>"""
     return HTMLResponse(
         body,
         headers={
             "Content-Security-Policy": (
-                "default-src 'none'; script-src https://unpkg.com; "
+                f"default-src 'none'; script-src https://unpkg.com blob: 'nonce-{nonce}'; "
                 "style-src 'unsafe-inline'; "
                 "connect-src https://api.elevenlabs.io wss://api.elevenlabs.io "
                 "https://api.us.elevenlabs.io wss://api.us.elevenlabs.io "
                 "https://*.livekit.cloud wss://*.livekit.cloud; "
                 "font-src data: https:; worker-src blob:; "
                 "img-src data: https:; media-src blob: https:"
-            )
+            ),
+            "Permissions-Policy": "microphone=(self), camera=(), geolocation=()",
         },
     )
 
