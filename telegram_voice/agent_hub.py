@@ -462,6 +462,9 @@ def answer(nudge: str = "", expires: int = 0, sig: str = "") -> HTMLResponse:
     signed_url = _elevenlabs_signed_url()
     dyn = html.escape(json.dumps({"nudge_context": nudge}), quote=True)
     signed_attr = html.escape(signed_url, quote=True)
+    # the widget needs agent-id to render its button; the signed URL only
+    # authenticates the session itself
+    agent_attr = html.escape(os.getenv("EL_AGENT_ID", ""), quote=True)
     body = f"""<!doctype html><html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Hermes calling…</title>
@@ -476,7 +479,7 @@ def answer(nudge: str = "", expires: int = 0, sig: str = "") -> HTMLResponse:
 <p>You are about to speak with an AI assistant. Voice is processed by ElevenLabs;
 Buddy is configured not to retain call audio and to delete hosted conversation data.</p>
 <p>Tap the widget below to answer</p>
-<elevenlabs-convai signed-url="{signed_attr}" dynamic-variables='{dyn}'></elevenlabs-convai>
+<elevenlabs-convai agent-id="{agent_attr}" signed-url="{signed_attr}" dynamic-variables='{dyn}'></elevenlabs-convai>
 <script src="https://unpkg.com/@elevenlabs/convai-widget-embed@0.14.8" async></script>
 </body></html>"""
     return HTMLResponse(
@@ -484,8 +487,12 @@ Buddy is configured not to retain call audio and to delete hosted conversation d
         headers={
             "Content-Security-Policy": (
                 "default-src 'none'; script-src https://unpkg.com; "
-                "style-src 'unsafe-inline'; connect-src https://api.elevenlabs.io "
-                "wss://api.elevenlabs.io; img-src data: https:; media-src blob:"
+                "style-src 'unsafe-inline'; "
+                "connect-src https://api.elevenlabs.io wss://api.elevenlabs.io "
+                "https://api.us.elevenlabs.io wss://api.us.elevenlabs.io "
+                "https://*.livekit.cloud wss://*.livekit.cloud; "
+                "font-src data: https:; worker-src blob:; "
+                "img-src data: https:; media-src blob: https:"
             )
         },
     )
