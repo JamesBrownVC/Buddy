@@ -21,42 +21,42 @@
   "bookkeeper": {
     "type": "http",
     "url": "http://localhost:9102/ask",
-    "description": "manages the user's memory: remember things, recall schedule, mark tasks done or deferred"
+    "description": "the user's MEMORY: stores and recalls the user's tasks, schedule, appointments, notes and preferences. Route here anything about what the user has to do, has planned, or has told us."
   },
   "browser": {
     "type": "http",
     "url": "http://localhost:9103/ask",
-    "description": "looks things up on the web and reports back"
+    "description": "operates the LIVE WEB through a real stealth browser: looks up current facts/news/prices/weather, reads any website, AND logs into and acts on the user's web apps — WhatsApp Web, Gmail and other email, Slack, Notion, Google, calendars, etc. (open, read, click, type, fill forms). Route here anything needing the live web or any online app/service."
   },
   "orchestrator": {
     "type": "http",
     "url": "http://localhost:9104/ask",
-    "description": "the manager: routes work across the network, runs build tasks end-to-end (context -> PRD -> builder), owns the org chart and task ledger"
+    "description": "MANAGER: handles multi-step 'build/make/do X' requests, coordinates several agents end to end, and is the escalation point when no single agent fits."
   },
   "builder": {
     "type": "http",
     "url": "http://localhost:9105/ask",
-    "description": "builds NEW Hermes agents on demand",
+    "description": "BUILDS new agents on demand (a new Hermes agent with its own brain, instantly callable).",
     "brain_port": 8646,
     "agent_port": 9105
   },
   "repair": {
     "type": "http",
     "url": "http://localhost:9106/ask",
-    "description": "self-healing: scans failures and fixes the network",
+    "description": "diagnoses and FIXES the network: restarts dead agents, recreates the stealth browser, restarts brains.",
     "brain_port": 8647,
     "agent_port": 9106
   },
   "toolsmith": {
     "type": "http",
     "url": "http://localhost:9107/ask",
-    "description": "forges deterministic tools and attaches them to the right agent",
+    "description": "FORGES deterministic API tools and attaches each to the right specialist agent.",
     "brain_port": 8648,
     "agent_port": 9107
   },
   "router": {
     "type": "http",
     "url": "http://localhost:9108/ask",
-    "description": "ask me when you are unsure which agent should handle something or you cannot do it yourself; I route your request to the right agent and return its answer"
+    "description": "ask me when you're unsure which agent should handle something or you can't do it yourself; I route your request to the right agent and return its answer."
   }
 }

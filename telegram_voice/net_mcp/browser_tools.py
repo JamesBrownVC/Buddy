@@ -59,7 +59,9 @@ def web_search(query: str) -> str:
 
 @mcp.tool()
 def open_url(url: str) -> str:
-    """Open a specific URL on the stealth browser and return the page text."""
+    """Open a specific URL on the stealth browser and return the page text.
+    Use this to open a web app the user is signed into (WhatsApp Web, Gmail,
+    Slack, Notion, a calendar, …) and read it, then click/type to act on it."""
     goto = _action({"action": "goto", "url": url, "wait_until": "domcontentloaded"})
     if isinstance(goto, dict) and goto.get("success") is False:
         _log_fail("container_lookup_failed", str(goto.get("error")), {"url": url})
@@ -67,6 +69,33 @@ def open_url(url: str) -> str:
     page = _action({"action": "get_text"})
     text = (page.get("data") or {}).get("text", "") if isinstance(page, dict) else ""
     return f"{url}:\n\n{text.strip()[:6000]}" if text.strip() else "no text on page"
+
+
+@mcp.tool()
+def read_page() -> str:
+    """Read the text of the page currently open in the stealth browser (after a
+    click/type, or to check state). Does not navigate."""
+    page = _action({"action": "get_text"})
+    text = (page.get("data") or {}).get("text", "") if isinstance(page, dict) else ""
+    return text.strip()[:6000] or "no text on the current page"
+
+
+@mcp.tool()
+def click(selector: str) -> str:
+    """Click an element on the current page by CSS selector (e.g. a button, a
+    link, a chat, a compose button). Then call read_page to see the result."""
+    r = _action({"action": "click", "selector": selector})
+    ok = isinstance(r, dict) and r.get("success") is not False
+    return f"clicked {selector}" if ok else f"click failed: {r.get('error') if isinstance(r, dict) else r}"
+
+
+@mcp.tool()
+def type_text(selector: str, text: str) -> str:
+    """Type text into an input/textarea on the current page by CSS selector
+    (e.g. a search box, a message field). Combine with click to submit."""
+    r = _action({"action": "type", "selector": selector, "text": text})
+    ok = isinstance(r, dict) and r.get("success") is not False
+    return f"typed into {selector}" if ok else f"type failed: {r.get('error') if isinstance(r, dict) else r}"
 
 
 if __name__ == "__main__":
