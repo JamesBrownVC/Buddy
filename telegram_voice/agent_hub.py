@@ -680,6 +680,42 @@ def get_agent_memory(name: str = "") -> dict:
         return {"name": name, "found": False}
 
 
+@app.get("/api/agents")
+def api_agents() -> dict:
+    """Live agent roster for the dashboard graph. Static specialists plus any
+    builder-generated agents, each with a health probe — so new agents the
+    Builder creates automatically appear as nodes the Orchestrator can call."""
+    import httpx as _httpx
+    static = {
+        "bookkeeper": 9102, "browser": 9103, "orchestrator": 9104,
+        "builder": 9105, "repair": 9106,
+    }
+    reg = {}
+    try:
+        reg = json.loads((Path(__file__).resolve().parent / "agents.json").read_text())
+    except Exception:
+        pass
+
+    def _up(port: int) -> bool:
+        try:
+            return _httpx.get(f"http://127.0.0.1:{port}/health", timeout=1.5).status_code == 200
+        except Exception:
+            return False
+
+    agents = []
+    for name, port in static.items():
+        agents.append({"name": name, "port": port, "generated": False,
+                       "state": "ready" if _up(port) else "down",
+                       "desc": (reg.get(name) or {}).get("description", "")})
+    for name, v in reg.items():
+        if isinstance(v, dict) and v.get("generated") and v.get("agent_port"):
+            p = v["agent_port"]
+            agents.append({"name": name, "port": p, "generated": True,
+                           "state": "ready" if _up(p) else "down",
+                           "desc": v.get("description", "")})
+    return {"agents": agents}
+
+
 @app.get("/health")
 def health() -> dict:
     return {"ok": True, "hub": "hermes"}

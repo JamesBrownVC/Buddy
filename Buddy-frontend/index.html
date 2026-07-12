@@ -636,7 +636,9 @@
       { id: "user",         label: "You",          role: "Telegram",    emoji: "💬", x: 300, y: 56,  r: 27 },
       { id: "browser",      label: "Browser",      role: "Stealth web", emoji: "🌐", x: 516, y: 168, r: 27 },
       { id: "bookkeeper",   label: "Bookkeeper",   role: "Memory",      emoji: "📚", x: 470, y: 372, r: 27 },
-      { id: "orchestrator", label: "Orchestrator", role: "Router",      emoji: "🧭", x: 128, y: 322, r: 27 }
+      { id: "orchestrator", label: "Orchestrator", role: "Router",      emoji: "🧭", x: 128, y: 322, r: 27 },
+      { id: "builder",      label: "Builder",      role: "Builds agents", emoji: "🛠️", x: 60,  y: 408, r: 23 },
+      { id: "repair",       label: "Repair",       role: "Self-heal",   emoji: "🩺", x: 210, y: 410, r: 23 }
     ];
     const EDGES = [
       ["user", "hermes"],
@@ -644,7 +646,9 @@
       ["hermes", "bookkeeper"],
       ["hermes", "orchestrator"],
       ["orchestrator", "browser"],
-      ["orchestrator", "bookkeeper"]
+      ["orchestrator", "bookkeeper"],
+      ["orchestrator", "builder"],
+      ["hermes", "repair"]
     ];
     const nodeById = {};
     NODES.forEach((n) => { nodeById[n.id] = n; });
@@ -681,6 +685,10 @@
       const partsG = $("#net-particles");
       const nodesG = $("#net-nodes");
       if (!edgesG || !nodesG || !partsG) return;
+      // re-runnable: clear any previous render (used when generated agents arrive)
+      edgesG.innerHTML = ""; partsG.innerHTML = ""; nodesG.innerHTML = "";
+      Object.keys(nodeEls).forEach((k) => delete nodeEls[k]);
+      particles.length = 0;
 
       edgeGeo = EDGES.map(([a, b]) => {
         const A = nodeById[a], B = nodeById[b];
@@ -1443,8 +1451,33 @@
     }
 
     // ---------- boot ----------
+    // Pull the live roster and inject any builder-generated agents as nodes
+    // wired to the Orchestrator, so new agents appear in the graph automatically.
+    async function augmentGeneratedAgents() {
+      try {
+        const r = await fetch(`${apiBase}/api/agents`, { cache: "no-store" });
+        const data = await r.json();
+        let added = 0, gi = 0;
+        (data.agents || []).forEach((a) => {
+          if (nodeById[a.name]) return;            // already a node
+          if (!a.generated) return;                 // only inject generated ones
+          const x = 300 + (gi % 2 ? 1 : -1) * (60 + 40 * Math.floor(gi / 2));
+          const y = 415 - 6 * (gi % 2);
+          const node = { id: a.name, label: a.name[0].toUpperCase() + a.name.slice(1),
+                         role: "Generated", emoji: "✨", x: Math.max(30, Math.min(570, x)),
+                         y, r: 20, generated: true };
+          NODES.push(node); nodeById[a.name] = node;
+          EDGES.push(["builder", a.name]);          // builder spawned it
+          EDGES.push(["orchestrator", a.name]);     // orchestrator can call it
+          added++; gi++;
+        });
+        if (added) buildGraph();                    // re-render with the new nodes
+      } catch (e) { /* graph still fine without generated nodes */ }
+    }
+
     function boot() {
       try { buildGraph(); } catch (e) { console.warn("graph init", e); }
+      try { augmentGeneratedAgents(); } catch (e) {}
       try { initTabs(); } catch (e) {}
       try { initDrawer(); } catch (e) {}
       try { renderCrew(); renderTasks(); } catch (e) {}

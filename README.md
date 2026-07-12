@@ -74,14 +74,34 @@ Buddy is a mesh of small, single-purpose agents behind one hub, running entirely
 
 | Component | Port | Role |
 |-----------|------|------|
-| Hub (`agent_hub.py`) | 8484 | Agent registry, routing, dashboard/docs/memory API, webhook endpoints for the voice agent |
-| Bookkeeper (`net_agents/bookkeeper.py`) | 9102 | The user's memory: capture, recall, defer, complete — Hermes runtime primary, cloud fallback |
-| Browser (`net_agents/browser.py`) | 9103 | Web lookups on a real stealth browser; visible live via noVNC |
-| Orchestrator (`net_agents/orchestrator.py`) | 9104 | Manager: decomposes "build me X", routes to planner/builder, tracks a task ledger |
+| Hub (`agent_hub.py`) | 8484 | Agent registry, routing, dashboard/docs/memory/roster API, webhook endpoints for the voice agent |
+| Bookkeeper (`net_agents/bookkeeper.py`) | 9102 | The user's memory: capture, recall, defer, complete |
+| Browser (`net_agents/browser.py`) | 9103 | Web lookups on the **visible** stealth browser (never silently degrades) |
+| Orchestrator (`net_agents/orchestrator.py`) | 9104 | Manager: decomposes "build me X", routes across the mesh, task ledger |
+| **Builder** (`net_agents/builder.py`) | 9105 | **Builds new agents on demand** — own Hermes brain + `/ask` service + registry entry; the network is auto-expandable |
+| **Repair** (`net_agents/repair.py`) | 9106 | **Self-healing**: reads the failure log (small local RAG), restarts dead agents, recreates the stealth browser |
 | Telegram bridge (`bot.py`) | — | Voice notes ↔ agent loop (local Whisper STT, Edge TTS) |
 | Voice agent (ElevenLabs) | cloud | Live conversational body-double; reaches the mesh via webhook tools |
+| Terra proxy (`terra_proxy.py`) | 8650 | Sanitises Hermes' request body so every brain runs **gpt-5.6-terra** |
+| Hermes brains | 8643-8645+ | One local Hermes instance per agent (gpt-5.6-terra via the proxy) |
 | Stealth browser | 8080 / 5900 | Camoufox + PyAutoGUI in Docker; JSON API + live noVNC view |
-| Dashboard (`Buddy-frontend/`) | 5500 | Live agent graph, productivity analytics, per-agent docs & memory |
+| Dashboard (`Buddy-frontend/`) | 5500 | Live agent graph (generated agents appear automatically), productivity analytics, per-agent docs & memory |
+
+### Self-extending & self-healing
+
+- **Builder** turns a one-line spec into a complete new agent: it creates a Hermes
+  profile (gpt-5.6-terra via the proxy) with a generated persona, writes a
+  `net_agents/<name>.py` service, registers it, and launches it. The new agent is
+  instantly callable by every other agent (`ask_agent('<name>')`) and appears as a
+  node in the dashboard graph.
+- **Repair** consumes a structured failure log (`state/failures.jsonl`) that every
+  agent writes to, retrieves the most relevant recent failures with a tiny
+  dependency-free local RAG, diagnoses with its own gpt-5.6 brain, and executes
+  concrete fixes (restart a dead agent, recreate the browser container, restart a
+  Hermes brain or the proxy). Ask it `scan`, then `repair`.
+- **The browser always uses the visible stealth browser.** Any degrade to the
+  invisible text fallback is logged as a repairable failure — so Repair fixes the
+  browser rather than the system silently limping on DuckDuckGo.
 
 ---
 
@@ -101,7 +121,10 @@ colima start --cpu 2 --memory 4
 docker run -d --name browser --restart unless-stopped \
   -p 8080:8080 -p 5900:5900 psyb0t/stealthy-auto-browse
 
-# the whole stack: hub + tunnel + bot + agents, self-healing URLs
+# create the per-agent Hermes brains (needs Hermes installed + OPENAI_API_KEY set)
+.venv/bin/python setup_hermes_brains.py
+
+# the whole stack: terra proxy + Hermes brains + hub + tunnel + bot + agents
 .venv/bin/python start_all_mac.py
 
 # provision the ElevenLabs agent + its webhook tools

@@ -46,7 +46,8 @@ MAX_STEPS = 12
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("browser")
 
-from net_agents.agent_context import load_context  # noqa: E402
+from net_agents.agent_context import load_context
+from net_agents.failure_log import log_failure  # noqa: E402
 PERSONAL_CONTEXT = load_context("browser")  # persona + Buddy README + ops guide
 
 app = FastAPI(title="browser agent")
@@ -230,15 +231,25 @@ def container_lookup(q: str) -> str:
     """Deterministic, VISIBLE lookup: drive the real (stealth) browser to a
     search-results page, read it, condense. No LLM tab-management loop, so it
     never gets stuck 'opening a new tab' on the 2nd+ call — and it always shows
-    on the live noVNC screen."""
+    on the live noVNC screen. Raises on container trouble so the caller can log
+    a repairable failure instead of silently degrading."""
     url = "https://duckduckgo.com/html/?q=" + urllib.parse.quote(q)
-    browser_action({"action": "goto", "url": url, "wait_until": "domcontentloaded"})
+    goto = browser_action({"action": "goto", "url": url,
+                           "wait_until": "domcontentloaded"})
+    try:
+        gj = json.loads(goto)
+        if isinstance(gj, dict) and gj.get("success") is False:
+            raise RuntimeError(f"goto failed: {gj.get('error') or goto[:120]}")
+    except (ValueError, TypeError):
+        pass  # non-JSON goto response — let get_text decide
     raw = browser_action({"action": "get_text"})
     try:
         page = json.loads(raw)
         text = (page.get("data") or {}).get("text") or ""
     except Exception:
         text = raw or ""
+    if not text.strip():
+        raise RuntimeError("empty page text from stealth browser")
     text = re.sub(r"[ \t]+", " ", re.sub(r"\n{2,}", "\n", text)).strip()[:6000]
     return condense_text(q, text, url)
 
@@ -246,14 +257,23 @@ def container_lookup(q: str) -> str:
 @app.post("/ask")
 def ask(a: Ask) -> dict:
     q = a.message.strip()
-    if container_up():
+    # ALWAYS prefer the visible stealth browser. Every degrade to the invisible
+    # text fallback is logged as a repairable failure so the Repair agent can
+    # fix the browser — we never silently switch to DuckDuckGo.
+    up = container_up()
+    if up:
         log.info("visible lookup: %s", q[:120])
         try:
             return {"reply": container_lookup(q)}
         except Exception as e:
-            log.warning("container lookup failed (%s); using text fallback", e)
+            log.warning("stealth browser failed (%s); logging for repair", e)
+            log_failure("browser", "container_lookup_failed", str(e),
+                        {"query": q[:200], "browser_api": BROWSER_API})
     else:
-        log.info("fallback lookup (container down): %s", q[:120])
+        log.warning("stealth browser DOWN; logging for repair")
+        log_failure("browser", "container_down",
+                    "container_up() is False — /health not 'ok'",
+                    {"query": q[:200], "browser_api": BROWSER_API})
     return {"reply": fallback_search(q)}
 
 

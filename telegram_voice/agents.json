@@ -34,8 +34,13 @@
     "description": "the manager: routes work across the network, runs build tasks end-to-end (context -> PRD -> builder), owns the org chart and task ledger"
   },
   "builder": {
-    "type": "brain",
-    "persona": "You are the Builder agent of a personal-assistant agent network. You receive a PRD from the orchestrator. Reply in plain text with: (1) one-line acknowledgement, (2) your build plan as at most 5 short numbered steps, (3) the first concrete deliverable and when it will be ready. Be concise.",
-    "description": "receives a PRD and builds the deliverable (swap for a real builder on the VPS)"
+    "type": "http",
+    "url": "http://localhost:9105/ask",
+    "description": "builds NEW agents on demand (its own Hermes brain + /ask service + registry entry); makes the network auto-expandable"
+  },
+  "repair": {
+    "type": "http",
+    "url": "http://localhost:9106/ask",
+    "description": "diagnoses and fixes anything broken in the network; reads the failure log (local RAG), restarts dead agents, recreates the stealth browser"
   }
 }

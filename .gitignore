@@ -13,3 +13,6 @@ __pycache__/
 *.WORKING-*
 index.backup-*.html
 .DS_Store
+
+# builder-generated agents (runtime artifacts)
+telegram_voice/state/*.key
