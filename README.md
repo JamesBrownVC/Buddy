@@ -78,7 +78,7 @@ So the mesh is genuinely autonomous agents talking to autonomous agents — each
 2. **Text in, text out.** The `/ask` contract is the entire interface. Any agent (or human, or curl) can talk to any other agent. Adding an agent = one Hermes profile + a two-line forwarder + one registry entry — which is exactly what the Builder automates.
 3. **The browser is real.** No headless scraping API pretending to be "browsing" — a stealth Firefox (Camoufox) with real OS-level input runs in Docker, and the dashboard streams its screen over noVNC. When Buddy looks something up, you can *watch it*.
 4. **Memory models attention, not storage.** The bookkeeper weights items on a bell curve around *now* (working memory) with a separate long-term store that only decays on completion or expiry — mirroring what ADHD working memory can't do.
-5. **Fallback chains everywhere.** Every brain call has a fallback (local Hermes runtime → cloud model → rule-based reply). A live voice call must never hang on a single point of failure.
+5. **Pure Hermes, no fallbacks.** Every agent runs on its Hermes runtime — no direct-model bypass, no invisible search fallback. If a runtime is down the agent says so (and the Repair agent fixes it) rather than silently degrading.
 6. **Local-first.** The mesh, the memory, the browser, the dashboard, and the STT (local Whisper) run on one machine on your LAN. Cloud is used only for LLM inference and the voice layer.
 
 ### Components
@@ -89,8 +89,8 @@ So the mesh is genuinely autonomous agents talking to autonomous agents — each
 | Bookkeeper (`net_agents/bookkeeper.py`) | 9102 | The user's memory: capture, recall, defer, complete |
 | Browser (`net_agents/browser.py`) | 9103 | Web lookups on the **visible** stealth browser (never silently degrades) |
 | Orchestrator (`net_agents/orchestrator.py`) | 9104 | Manager: decomposes "build me X", routes across the mesh, task ledger |
-| **Builder** (`net_agents/builder.py`) | 9105 | **Builds new agents on demand** — own Hermes brain + `/ask` service + registry entry; the network is auto-expandable |
-| **Repair** (`net_agents/repair.py`) | 9106 | **Self-healing**: reads the failure log (small local RAG), restarts dead agents, recreates the stealth browser |
+| **Builder** (`net_agents/builder.py`) | 9105 | A Hermes agent that **builds new agents on demand** (via its `build_agent` MCP tool) — the network is auto-expandable |
+| **Repair** (`net_agents/repair.py`) | 9106 | A Hermes agent that **self-heals** (MCP tools: scan health, restart agents, recreate the stealth browser, restart brains) using the failure log |
 | Telegram bridge (`bot.py`) | — | Voice notes ↔ agent loop (local Whisper STT, Edge TTS) |
 | Voice agent (ElevenLabs) | cloud | Live conversational body-double; reaches the mesh via webhook tools |
 | Terra proxy (`terra_proxy.py`) | 8650 | Sanitises Hermes' request body so every brain runs **gpt-5.6-terra** |

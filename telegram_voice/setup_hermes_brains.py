@@ -34,6 +34,8 @@ BRAINS = {
     "buddybrain": (8643, "bookkeeper", "buddybrain-local", ["net_mcp.memory_tools"]),
     "browserbrain": (8644, "browser", "browserbrain-local", ["net_mcp.browser_tools"]),
     "orchbrain": (8645, "orchestrator", None, []),
+    "builderbrain": (8646, "builder", "builderbrain-local", ["net_mcp.builder_tools"]),
+    "repairbrain": (8647, "repair", "repairbrain-local", ["net_mcp.repair_tools"]),
 }
 
 HVENV = str(Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin" / "python")

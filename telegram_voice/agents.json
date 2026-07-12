@@ -36,11 +36,15 @@
   "builder": {
     "type": "http",
     "url": "http://localhost:9105/ask",
-    "description": "builds NEW agents on demand (its own Hermes brain + /ask service + registry entry); makes the network auto-expandable"
+    "description": "builds NEW Hermes agents on demand",
+    "brain_port": 8646,
+    "agent_port": 9105
   },
   "repair": {
     "type": "http",
     "url": "http://localhost:9106/ask",
-    "description": "diagnoses and fixes anything broken in the network; reads the failure log (local RAG), restarts dead agents, recreates the stealth browser"
+    "description": "self-healing: scans failures and fixes the network",
+    "brain_port": 8647,
+    "agent_port": 9106
   }
 }

@@ -39,6 +39,8 @@ HERMES_BRAINS = [  # (profile, api port) — one Hermes instance per agent brain
     ("buddybrain", 8643),     # bookkeeper
     ("browserbrain", 8644),   # browser
     ("orchbrain", 8645),      # orchestrator
+    ("builderbrain", 8646),   # builder
+    ("repairbrain", 8647),    # repair
 ]
 
 
