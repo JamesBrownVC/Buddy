@@ -61,7 +61,8 @@ def ask_agent(agent: str, message: str) -> str:
         return "that's you — answer it yourself instead of delegating"
     try:
         r = httpx.post(f"{HUB}/agents/ask",
-                       json={"agent": target, "message": message}, timeout=90)
+                       json={"agent": target, "message": message,
+                             "from": SELF or "agent"}, timeout=90)
         return r.json().get("reply", "") or "(empty reply)"
     except Exception as e:
         return f"could not reach {target}: {e}"

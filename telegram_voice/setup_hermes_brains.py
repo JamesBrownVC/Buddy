@@ -37,6 +37,7 @@ BRAINS = {
     "builderbrain": (8646, "builder", "builderbrain-local", ["net_mcp.builder_tools"]),
     "repairbrain": (8647, "repair", "repairbrain-local", ["net_mcp.repair_tools"]),
     "toolsmithbrain": (8648, "toolsmith", "toolsmithbrain-local", ["net_mcp.toolsmith_tools"]),
+    "auditbrain": (8649, "audit", "auditbrain-local", ["net_mcp.audit_tools"]),
 }
 
 HVENV = str(Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin" / "python")

@@ -33,7 +33,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from brain import think as brain_think
 
@@ -204,6 +204,23 @@ async def post_call(request: Request) -> dict:
 class AgentAsk(BaseModel):
     agent: str
     message: str
+    # who is asking: another agent's name, or "external" for a top-level task.
+    # This turns the exchange log into a task tree (macro task -> sub-tasks).
+    from_: str = Field("external", alias="from")
+
+    class Config:
+        populate_by_name = True
+
+
+def _log_task(rec: dict) -> None:
+    """Append one audited task record (ask, reply, who asked, timing) so the
+    Audit agent can judge each action against its ask — at both the macro
+    (external request) and micro (agent->agent) level. Never raises."""
+    try:
+        with open(config.STATE_DIR / "task_log.jsonl", "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
 
 
 @app.post("/agents/list")
@@ -215,16 +232,24 @@ def agents_list() -> dict:
 @app.post("/agents/ask")
 async def agents_ask(a: AgentAsk) -> dict:
     import anyio
+    import time as _time
 
     from agents_registry import ask_agent
-    log.info("agent-exchange -> %s: %s", a.agent, a.message[:120])
+    asker = (a.from_ or "external").strip().lower()
+    level = "macro" if asker == "external" else "micro"
+    log.info("agent-exchange %s -> %s: %s", asker, a.agent, a.message[:120])
+    t0 = _time.time()
     reply = await anyio.to_thread.run_sync(ask_agent, a.agent, a.message)
-    log.info("agent-exchange <- %s: %s", a.agent, reply[:120])
+    ms = int((_time.time() - t0) * 1000)
+    log.info("agent-exchange <- %s (%dms): %s", a.agent, ms, reply[:120])
+    _log_task({"ts": _now(), "level": level, "from": asker, "agent": a.agent,
+               "ask": a.message[:1000], "reply": (reply or "")[:1500], "ms": ms,
+               "ok": bool(reply and reply.strip())})
     with open(config.STATE_DIR / "agent_exchanges.log", "a", encoding="utf-8") as fh:
-        fh.write(f"[{_now()}] hermes->{a.agent}: {a.message}\n"
-                 f"[{_now()}] {a.agent}->hermes: {reply}\n")
+        fh.write(f"[{_now()}] {asker}->{a.agent}: {a.message}\n"
+                 f"[{_now()}] {a.agent}->{asker}: {reply}\n")
     await broadcast("agent_exchange",
-                    {"to": a.agent, "message": a.message, "reply": reply})
+                    {"to": a.agent, "from": asker, "message": a.message, "reply": reply})
     return {"reply": reply}
 
 
@@ -690,7 +715,7 @@ def api_agents() -> dict:
     import httpx as _httpx
     static = {
         "bookkeeper": 9102, "browser": 9103, "orchestrator": 9104,
-        "builder": 9105, "repair": 9106, "toolsmith": 9107, "router": 9108,
+        "builder": 9105, "repair": 9106, "toolsmith": 9107, "router": 9108, "audit": 9109,
     }
     reg = {}
     try:

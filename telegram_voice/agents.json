@@ -58,5 +58,12 @@
     "type": "http",
     "url": "http://localhost:9108/ask",
     "description": "ask me when you're unsure which agent should handle something or you can't do it yourself; I route your request to the right agent and return its answer."
+  },
+  "audit": {
+    "type": "http",
+    "url": "http://localhost:9109/ask",
+    "description": "reviews how the network performs (each action vs its ask, latency, failures) and requests surgical improvements — tools from the toolsmith, agents from the builder",
+    "brain_port": 8649,
+    "agent_port": 9109
   }
 }

@@ -83,7 +83,7 @@ def _escalate(message: str, asker: str) -> dict:
     try:
         reply = httpx.post(
             f"{HUB}/agents/ask",
-            json={"agent": "orchestrator",
+            json={"agent": "orchestrator", "from": "router",
                   "message": f"[Escalated by the router — no single existing "
                              f"agent could clearly handle this. Force-route it "
                              f"to the best fit, or build a new agent/tool if a "
@@ -108,7 +108,7 @@ def ask(a: Ask) -> dict:
         return _escalate(a.message, a.from_ or "")
     try:
         reply = httpx.post(f"{HUB}/agents/ask",
-                           json={"agent": name, "message": a.message},
+                           json={"agent": name, "message": a.message, "from": "router"},
                            timeout=120).json().get("reply", "")
         return {"reply": f"[routed to {name}] {reply}"}
     except Exception as e:
