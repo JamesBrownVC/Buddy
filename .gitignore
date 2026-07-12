@@ -17,3 +17,6 @@ index.backup-*.html
 # builder-generated agents (runtime artifacts)
 telegram_voice/state/*.key
 *.CUSTOM-*
+
+# builder/toolsmith runtime artifacts
+telegram_voice/net_mcp/generated/

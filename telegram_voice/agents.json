@@ -46,5 +46,12 @@
     "description": "self-healing: scans failures and fixes the network",
     "brain_port": 8647,
     "agent_port": 9106
+  },
+  "toolsmith": {
+    "type": "http",
+    "url": "http://localhost:9107/ask",
+    "description": "forges deterministic tools and attaches them to the right agent",
+    "brain_port": 8648,
+    "agent_port": 9107
   }
 }

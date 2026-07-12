@@ -638,7 +638,8 @@
       { id: "bookkeeper",   label: "Bookkeeper",   role: "Memory",      emoji: "📚", x: 470, y: 372, r: 27 },
       { id: "orchestrator", label: "Orchestrator", role: "Router",      emoji: "🧭", x: 128, y: 322, r: 27 },
       { id: "builder",      label: "Builder",      role: "Builds agents", emoji: "🛠️", x: 60,  y: 408, r: 23 },
-      { id: "repair",       label: "Repair",       role: "Self-heal",   emoji: "🩺", x: 210, y: 410, r: 23 }
+      { id: "repair",       label: "Repair",       role: "Self-heal",   emoji: "🩺", x: 210, y: 410, r: 23 },
+      { id: "toolsmith",    label: "Toolsmith",    role: "Forges tools", emoji: "⚒️", x: 540, y: 300, r: 23 }
     ];
     const EDGES = [
       ["user", "hermes"],
@@ -648,7 +649,9 @@
       ["orchestrator", "browser"],
       ["orchestrator", "bookkeeper"],
       ["orchestrator", "builder"],
-      ["hermes", "repair"]
+      ["hermes", "repair"],
+      ["builder", "toolsmith"],
+      ["toolsmith", "browser"]
     ];
     const nodeById = {};
     NODES.forEach((n) => { nodeById[n.id] = n; });
@@ -1170,7 +1173,8 @@
       bookkeeper:   { role: "Memory · Bookkeeper",     endpoint: ":9102",  brain: "local Hermes :8643",             blurb: "Captures facts and schedule; its brain runs on the local Hermes.", docNames: ["bookkeeper"] },
       orchestrator: { role: "Router · Orchestrator",   endpoint: ":9104",  blurb: "Runs work end to end, coordinating the other agents.", docNames: ["orchestrator"] },
       builder:      { role: "Builds agents · Builder", endpoint: ":9105",  blurb: "Turns a one-line spec into a whole new agent: its own Hermes brain, /ask service, registry entry, and a node here — instantly callable by the others.", docNames: ["builder"] },
-      repair:       { role: "Self-heal · Repair",      endpoint: ":9106",  brain: "reads failures.jsonl (local RAG)", blurb: "Diagnoses and fixes the network: restarts dead agents, recreates the stealth browser, restarts brains. Ask it to 'scan' then 'repair'.", docNames: ["repair"] }
+      repair:       { role: "Self-heal · Repair",      endpoint: ":9106",  brain: "reads failures.jsonl (local RAG)", blurb: "Diagnoses and fixes the network: restarts dead agents, recreates the stealth browser, restarts brains. Ask it to 'scan' then 'repair'.", docNames: ["repair"] },
+      toolsmith:    { role: "Forges tools · Toolsmith", endpoint: ":9107",  brain: "build_tool MCP", blurb: "Forges deterministic tools (MCP connectors to APIs) and attaches each to one specialist agent — keeping every agent's tool set minimal. Built by the Builder.", docNames: ["toolsmith"] }
     };
 
     let currentDocUrl = null;   // object URL for the raw-md fallback link

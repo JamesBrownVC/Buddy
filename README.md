@@ -72,6 +72,12 @@ Agents collaborate through **MCP tools**, not hard-coded orchestration:
 
 So the mesh is genuinely autonomous agents talking to autonomous agents — each async, each deciding how to handle a request and when to delegate.
 
+### Tools vs agents, and minimal footprint
+
+Not every capability needs a reasoning agent. A weather lookup is a *deterministic tool* (one API call), not an agent. The **Toolsmith** (a Hermes agent, itself built by the Builder) forges deterministic MCP tools — `net_mcp/toolsmith_tools.build_tool` generates a small HTTP-GET MCP server (`net_mcp/generated/<tool>.py`) and attaches it to **one** specialist agent's Hermes profile.
+
+The guiding rule is **minimal tools per agent**: each agent carries only `agent_bridge` (for delegation) plus a small, minimal built-in toolset (`platform_toolsets: {api_server: [todo]}`, so agents don't wander into `execute_code`/terminal) and at most its own role tool. When an agent needs a capability it doesn't own, it **asks the specialist that does** — e.g. the bookkeeper doesn't carry a weather tool; asked about the weather it delegates to the browser agent, which owns `get_weather`. Specialized agents collaborating beats one agent with a hundred tools.
+
 ### Design principles
 
 1. **Agents are Hermes runtimes, not prompts.** Each agent is an independent Hermes process with its own persona, tools, and MCP peer-messaging. Kill one, the rest keep running; the hub degrades gracefully.

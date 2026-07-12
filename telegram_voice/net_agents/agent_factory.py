@@ -47,6 +47,8 @@ providers:
     api_mode: "chat_completions"
 agent:
   max_turns: 20
+platform_toolsets:
+  api_server: [todo]
 mcp_servers:
   agent_bridge:
     command: "{hvenv}"

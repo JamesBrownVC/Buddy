@@ -36,6 +36,7 @@ BRAINS = {
     "orchbrain": (8645, "orchestrator", None, []),
     "builderbrain": (8646, "builder", "builderbrain-local", ["net_mcp.builder_tools"]),
     "repairbrain": (8647, "repair", "repairbrain-local", ["net_mcp.repair_tools"]),
+    "toolsmithbrain": (8648, "toolsmith", "toolsmithbrain-local", ["net_mcp.toolsmith_tools"]),
 }
 
 HVENV = str(Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin" / "python")
@@ -53,6 +54,8 @@ providers:
     api_mode: "chat_completions"
 agent:
   max_turns: 20
+platform_toolsets:
+  api_server: [todo]
 mcp_servers:
 {mcp}"""
 

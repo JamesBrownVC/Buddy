@@ -41,6 +41,7 @@ HERMES_BRAINS = [  # (profile, api port) — one Hermes instance per agent brain
     ("orchbrain", 8645),      # orchestrator
     ("builderbrain", 8646),   # builder
     ("repairbrain", 8647),    # repair
+    ("toolsmithbrain", 8648), # toolsmith
 ]
 
 
@@ -114,7 +115,7 @@ def main() -> None:
           "orchestrator :9104 builder :9105 repair :9106")
     for name, port in [("bookkeeper", 9102), ("browser", 9103),
                        ("orchestrator", 9104), ("builder", 9105),
-                       ("repair", 9106)]:
+                       ("repair", 9106), ("toolsmith", 9107)]:
         spawn([str(PY), "-m", "uvicorn", f"net_agents.{name}:app",
                "--port", str(port)], f"{name}.log")
 
