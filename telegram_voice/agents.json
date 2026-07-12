@@ -43,7 +43,7 @@
   "repair": {
     "type": "http",
     "url": "http://localhost:9106/ask",
-    "description": "diagnoses and FIXES the network: restarts dead agents, recreates the stealth browser, restarts brains.",
+    "description": "diagnoses and FIXES the network: revives dead agents and brains from afar (wake_agent/wake_all_down, clears stale locks), recreates the stealth browser, restarts the terra proxy. Route here anything like 'X is down / not answering / broken'.",
     "brain_port": 8647,
     "agent_port": 9106
   },
@@ -62,7 +62,7 @@
   "audit": {
     "type": "http",
     "url": "http://localhost:9109/ask",
-    "description": "reviews how the network performs (each action vs its ask, latency, failures) and requests surgical improvements \u2014 tools from the toolsmith, agents from the builder",
+    "description": "reviews how the network performs (each action vs its ask, latency, failures), REVIVES dead or unresponsive agents itself (wake/restart services and brains, even remotely), and requests surgical improvements \u2014 tools from the toolsmith, agents from the builder",
     "brain_port": 8649,
     "agent_port": 9109
   }

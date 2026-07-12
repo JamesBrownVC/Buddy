@@ -124,6 +124,17 @@ def tool_defs(base: str) -> list[dict]:
           "Send the user a written Telegram note (plan, checklist, link) so they "
           "have it after the call.",
           "/notify_telegram", _body_schema({"message": ("string", "the note text")}, ["message"])),
+        t("network_status",
+          "Check the health of every agent in the network (service + brain). "
+          "Call when an agent does not answer or the user asks if Buddy is OK.",
+          "/agents/status", _body_schema({}, [])),
+        t("wake_agent",
+          "Wake a dead or unresponsive agent by name ('all' revives every down "
+          "agent). Returns immediately; the agent takes up to a minute to come "
+          "back — tell the user you are waking it and try again shortly.",
+          "/agents/wake", _body_schema({
+              "agent": ("string", "agent name, e.g. browser — or 'all'"),
+          }, ["agent"])),
     ]
 
 

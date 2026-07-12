@@ -83,15 +83,15 @@ class HubSecurityTests(unittest.TestCase):
         self.assertEqual(self.client.get("/answer").status_code, 403)
         nudge = "hello'><script>alert(1)</script>"
         expires, signature = sign_answer_link(nudge)
-        no_follow = TestClient(agent_hub.app, follow_redirects=False)
-        response = no_follow.get(
-            "/answer", params={"nudge": nudge, "expires": expires, "sig": signature}
-        )
-        self.assertEqual(response.status_code, 302)
-        location = response.headers["location"]
-        self.assertTrue(location.startswith("https://elevenlabs.io/app/talk-to?"))
-        self.assertIn("var_nudge_context=", location)
-        self.assertNotIn("<script>", location)
+        with patch("agent_hub.httpx.get", return_value=_SignedUrlResponse()):
+            response = self.client.get(
+                "/answer", params={"nudge": nudge, "expires": expires, "sig": signature}
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("elevenlabs-convai", response.text)
+        # the nudge is HTML-escaped into the widget attributes, never raw
+        self.assertNotIn("<script>alert(1)</script>", response.text)
+        self.assertIn("Content-Security-Policy", response.headers)
 
     def test_dashboard_voice_session_is_private(self) -> None:
         self.assertEqual(self.client.post("/api/voice-session").status_code, 401)

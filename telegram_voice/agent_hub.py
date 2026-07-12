@@ -21,6 +21,7 @@ then use https://<tunnel>/<endpoint> as each tool's URL in the dashboard.
 from __future__ import annotations
 
 import datetime as dt
+import html
 import ipaddress
 import json
 import logging
@@ -30,10 +31,10 @@ import config  # first: applies the Windows SSL cert-store fix
 
 import re
 from pathlib import Path
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlsplit
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -295,6 +296,49 @@ def agents_list() -> dict:
     return {"agents": list_agents()}
 
 
+def _looks_down(reply: str) -> bool:
+    """Heuristics for 'that agent is dead': its service refused the connection
+    or its Hermes runtime reported itself unavailable."""
+    r = (reply or "").lower()
+    return ("hermes runtime is unavailable" in r
+            or ("failed:" in r and ("connect" in r or "refused" in r
+                                    or "timed out" in r)))
+
+
+class WakeReq(BaseModel):
+    agent: str = Field(min_length=1, max_length=100)
+
+
+@app.post("/agents/wake")
+def agents_wake(w: WakeReq) -> dict:
+    """Wake a dead agent (voice-friendly: returns immediately, revival runs in
+    the background and takes up to ~90s). 'all' revives every unhealthy agent."""
+    import threading
+
+    from net_agents import lifecycle
+    name = w.agent.strip().lower()
+    if name == "all":
+        threading.Thread(target=lifecycle.wake_all_down, daemon=True).start()
+        return {"ok": True, "status": "waking every agent that is down — "
+                                      "give them a minute, then ask again"}
+    if name not in lifecycle.topology():
+        return {"ok": False,
+                "status": f"unknown agent; known: {', '.join(lifecycle.topology())}"}
+    threading.Thread(target=lifecycle.wake, args=(name,), daemon=True).start()
+    return {"ok": True, "status": f"waking {name} — give it a minute, then ask again"}
+
+
+@app.post("/agents/status")
+def agents_status() -> dict:
+    """Health of every agent (service + brain), for the voice agent and peers."""
+    from net_agents import lifecycle
+    rows = lifecycle.status()
+    down = [r["agent"] for r in rows if not r["healthy"]]
+    summary = ("every agent is healthy" if not down
+               else "DOWN: " + ", ".join(down))
+    return {"summary": summary, "agents": rows}
+
+
 @app.post("/agents/ask")
 async def agents_ask(a: AgentAsk) -> dict:
     import anyio
@@ -306,6 +350,13 @@ async def agents_ask(a: AgentAsk) -> dict:
     log.info("agent-exchange %s -> %s: %s", asker, a.agent, a.message[:120])
     t0 = _time.time()
     reply = await anyio.to_thread.run_sync(ask_agent, a.agent, a.message)
+    # Mailbox auto-wake: a message to a dead agent revives it, then retries.
+    if _looks_down(reply):
+        from net_agents import lifecycle
+        log.warning("agent %s looks down — waking it for this message", a.agent)
+        woke = await anyio.to_thread.run_sync(lifecycle.wake, a.agent)
+        if woke.get("ok"):
+            reply = await anyio.to_thread.run_sync(ask_agent, a.agent, a.message)
     ms = int((_time.time() - t0) * 1000)
     log.info("agent-exchange <- %s (%dms): %s", a.agent, ms, reply[:120])
     _log_task({"ts": _now(), "level": level, "from": asker, "agent": a.agent,
@@ -401,16 +452,43 @@ def voice_session() -> dict:
     return {"signed_url": _elevenlabs_signed_url()}
 
 
-@app.get("/answer")
-def answer(nudge: str = "", expires: int = 0, sig: str = "") -> RedirectResponse:
-    """Validate Buddy's link, then use ElevenLabs' reliable mobile call page."""
+@app.get("/answer", response_class=HTMLResponse)
+def answer(nudge: str = "", expires: int = 0, sig: str = "") -> HTMLResponse:
+    """Tap-to-answer page: live WebRTC voice call with Hermes, no telephony.
+    Hermes 'rings' via Telegram with a signed link here; ?nudge= is passed to
+    the agent as the {{nudge_context}} dynamic variable."""
     if len(nudge) > 1000 or not verify_answer_link(nudge, expires, sig):
         raise HTTPException(status_code=403, detail="invalid or expired call link")
-    agent_id = os.getenv("EL_AGENT_ID", "")
-    if not agent_id:
-        raise HTTPException(status_code=503, detail="voice agent is not configured")
-    query = urlencode({"agent_id": agent_id, "var_nudge_context": nudge})
-    return RedirectResponse(f"https://elevenlabs.io/app/talk-to?{query}", status_code=302)
+    signed_url = _elevenlabs_signed_url()
+    dyn = html.escape(json.dumps({"nudge_context": nudge}), quote=True)
+    signed_attr = html.escape(signed_url, quote=True)
+    body = f"""<!doctype html><html><head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hermes calling…</title>
+<style>
+ body{{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;
+ justify-content:center;background:#0f1117;color:#eee;font-family:system-ui;gap:12px}}
+ .pulse{{font-size:64px;animation:p 1.2s infinite}}
+ @keyframes p{{50%{{transform:scale(1.15)}}}}
+</style></head><body>
+<div class="pulse">📞</div>
+<h2>Hermes is calling</h2>
+<p>You are about to speak with an AI assistant. Voice is processed by ElevenLabs;
+Buddy is configured not to retain call audio and to delete hosted conversation data.</p>
+<p>Tap the widget below to answer</p>
+<elevenlabs-convai signed-url="{signed_attr}" dynamic-variables='{dyn}'></elevenlabs-convai>
+<script src="https://unpkg.com/@elevenlabs/convai-widget-embed@0.14.8" async></script>
+</body></html>"""
+    return HTMLResponse(
+        body,
+        headers={
+            "Content-Security-Policy": (
+                "default-src 'none'; script-src https://unpkg.com; "
+                "style-src 'unsafe-inline'; connect-src https://api.elevenlabs.io "
+                "wss://api.elevenlabs.io; img-src data: https:; media-src blob:"
+            )
+        },
+    )
 
 
 class ToggleReq(BaseModel):
