@@ -33,6 +33,8 @@ except Exception:
 HUB = os.getenv("HERMES_HUB", "http://127.0.0.1:8484").rstrip("/")
 MODEL_URL = os.getenv("TERRA_PROXY_URL", "http://127.0.0.1:8650/v1").rstrip("/")
 KEY = os.getenv("OPENAI_API_KEY", "")
+HUB_HEADERS = ({"X-Hermes-Secret": os.getenv("HUB_SECRET", "")}
+               if os.getenv("HUB_SECRET", "") else {})
 
 app = FastAPI(title="router (lightweight dispatcher)")
 
@@ -48,7 +50,8 @@ class Ask(BaseModel):
 
 def _roster(exclude: str) -> list[dict]:
     try:
-        agents = httpx.get(f"{HUB}/api/agents", timeout=8).json().get("agents", [])
+        agents = httpx.get(f"{HUB}/api/agents", headers=HUB_HEADERS,
+                           timeout=8).json().get("agents", [])
     except Exception:
         return []
     skip = {"router", (exclude or "").strip().lower()}
@@ -83,6 +86,7 @@ def _escalate(message: str, asker: str) -> dict:
     try:
         reply = httpx.post(
             f"{HUB}/agents/ask",
+            headers=HUB_HEADERS,
             json={"agent": "orchestrator", "from": "router",
                   "message": f"[Escalated by the router — no single existing "
                              f"agent could clearly handle this. Force-route it "
@@ -108,6 +112,7 @@ def ask(a: Ask) -> dict:
         return _escalate(a.message, a.from_ or "")
     try:
         reply = httpx.post(f"{HUB}/agents/ask",
+                           headers=HUB_HEADERS,
                            json={"agent": name, "message": a.message, "from": "router"},
                            timeout=120).json().get("reply", "")
         return {"reply": f"[routed to {name}] {reply}"}

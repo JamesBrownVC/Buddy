@@ -8,11 +8,15 @@ Then:    reads the fresh tunnel URL, writes HUB_PUBLIC_URL to .env, and
 """
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+import config  # loads the ignored local .env
+from security_utils import ensure_env_secret, set_env_value
 
 HERE = Path(__file__).resolve().parent
 PY = HERE / ".venv" / "Scripts" / "python.exe"
@@ -29,35 +33,39 @@ def spawn(args: list[str], **kw) -> subprocess.Popen:
 
 
 def main() -> None:
+    ensure_env_secret()
+    public_tunnel = os.getenv("ENABLE_PUBLIC_TUNNEL", "0").lower() in {
+        "1", "true", "yes"
+    }
     print("[1/4] agent hub :8484")
-    spawn([str(PY), "-m", "uvicorn", "agent_hub:app", "--port", "8484"])
+    spawn([str(PY), "-m", "uvicorn", "agent_hub:app", "--host",
+           os.getenv("BUDDY_BIND_HOST", "127.0.0.1"), "--port", "8484"])
 
-    print("[2/4] cloudflared tunnel…")
-    tun = spawn([CLOUDFLARED, "tunnel", "--url", "http://localhost:8484"],
-                stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
     url = ""
-    deadline = time.time() + 60
-    for line in tun.stderr:
-        m = URL_RE.search(line)
-        if m:
-            url = m.group(0)
-            break
-        if time.time() > deadline:
-            break
-    if not url:
-        raise SystemExit("tunnel URL not found — is cloudflared installed?")
-    print(f"      tunnel: {url}")
-
-    env_path = HERE / ".env"
-    env = env_path.read_text(encoding="utf-8")
-    if "HUB_PUBLIC_URL=" in env:
-        env = re.sub(r"^HUB_PUBLIC_URL=.*$", f"HUB_PUBLIC_URL={url}", env, flags=re.M)
+    if public_tunnel:
+        print("[2/5] cloudflared tunnel (explicitly enabled)…")
+        tun = spawn([CLOUDFLARED, "tunnel", "--url", "http://localhost:8484"],
+                    stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
+        deadline = time.time() + 60
+        for line in tun.stderr:
+            m = URL_RE.search(line)
+            if m:
+                url = m.group(0)
+                break
+            if time.time() > deadline:
+                break
+        if not url:
+            raise SystemExit("tunnel URL not found — disable ENABLE_PUBLIC_TUNNEL or install cloudflared")
+        os.environ["HUB_PUBLIC_URL"] = url
+        set_env_value("HUB_PUBLIC_URL", url)
+        set_env_value("ENABLE_PUBLIC_TUNNEL", "1")
+        print(f"      secured application endpoint: {url}")
+        print("[3/5] updating authenticated ElevenLabs tools…")
+        subprocess.run([str(PY), "setup_elevenlabs.py", url], cwd=HERE, check=True)
     else:
-        env += f"\nHUB_PUBLIC_URL={url}\n"
-    env_path.write_text(env, encoding="utf-8")
-
-    print("[3/4] re-pointing ElevenLabs tools at the new URL…")
-    subprocess.run([str(PY), "setup_elevenlabs.py", url], cwd=HERE, check=True)
+        os.environ["HUB_PUBLIC_URL"] = os.getenv("LOCAL_HUB_URL", "")
+        set_env_value("ENABLE_PUBLIC_TUNNEL", "0")
+        print("[2/5] public tunnel disabled (local-only mode)")
 
     print("[4/5] telegram bot listener")
     spawn([str(PY), "bot.py"])
@@ -67,7 +75,8 @@ def main() -> None:
     spawn([str(PY), "-m", "uvicorn", "net_agents.browser:app", "--port", "9103"])
     spawn([str(PY), "-m", "uvicorn", "net_agents.orchestrator:app", "--port", "9104"])
 
-    print("\nHermes stack UP.  Ring yourself:  python call_live.py \"hello\"")
+    print("\nHermes stack UP (local-only by default).")
+    print("Private dashboard: .venv\\Scripts\\python.exe open_dashboard.py")
     print("Ctrl+C stops everything.")
     try:
         while True:

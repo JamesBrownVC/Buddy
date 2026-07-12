@@ -15,7 +15,8 @@ tools on the local agent hub; every capability behind an endpoint is swappable.
 
 Start order after a reboot:
 1. `.venv\Scripts\python.exe -m uvicorn agent_hub:app --port 8484`
-2. `cloudflared tunnel --url http://localhost:8484` → grab the new URL →
+2. Keep Buddy local unless remote voice access is required. Before enabling a
+   tunnel, follow the root `SECURITY.md` checklist and configure Cloudflare Access.
    update the tool URLs in the dashboard (or set up a named tunnel / ngrok
    static domain once, to stop re-pasting).
 
@@ -55,9 +56,9 @@ All are **POST**, `Content-Type: application/json`.
 
 ## Post-call webhook (optional but great)
 
-Agents → Settings → Webhooks → post-call webhook →
-`<tunnel>/post_call`. Every call transcript is archived to
-`state/transcripts/` and the summary is appended to Hermes memory —
+Agents → Settings → Webhooks → post-call webhook → `<secured-host>/post_call`.
+Copy its HMAC secret to `ELEVENLABS_WEBHOOK_SECRET`. Raw transcripts are not
+stored by default; the summary is appended to local Hermes memory —
 so the *next* call starts already knowing what happened in the last one.
 
 ## Demo flow that lands

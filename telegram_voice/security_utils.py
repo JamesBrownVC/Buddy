@@ -54,6 +54,26 @@ def ensure_env_secret(name: str = "HUB_SECRET", nbytes: int = 32) -> str:
     return value
 
 
+def set_env_value(name: str, value: str) -> None:
+    """Persist a non-secret runtime setting in the ignored local .env."""
+    lines = ENV_FILE.read_text(encoding="utf-8").splitlines() if ENV_FILE.exists() else []
+    replacement = f"{name}={value}"
+    updated = False
+    for index, line in enumerate(lines):
+        if line.split("=", 1)[0].strip() == name:
+            lines[index] = replacement
+            updated = True
+            break
+    if not updated:
+        lines.append(replacement)
+    ENV_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    try:
+        ENV_FILE.chmod(0o600)
+    except OSError:
+        pass
+    os.environ[name] = value
+
+
 def hub_headers() -> dict[str, str]:
     secret = os.getenv("HUB_SECRET", "") or _read_env_file().get("HUB_SECRET", "")
     return {"X-Hermes-Secret": secret} if secret else {}

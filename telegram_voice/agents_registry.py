@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -131,9 +132,15 @@ def ask_agent(name: str, message: str) -> str:
                     return str(d[key])
             return json.dumps(d)[:800]
         if kind == "cmd":
+            configured = spec.get("command", "")
+            command = (list(configured) if isinstance(configured, list)
+                       else shlex.split(str(configured), posix=os.name != "nt"))
+            if any("{message}" in arg for arg in command):
+                command = [arg.replace("{message}", message) for arg in command]
+            else:
+                command.append(message)
             out = subprocess.run(
-                spec["command"].replace("{message}", message.replace('"', "'")),
-                shell=True, capture_output=True, text=True,
+                command, shell=False, capture_output=True, text=True,
                 encoding="utf-8", errors="replace",
                 timeout=spec.get("timeout", 60),
             )

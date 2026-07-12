@@ -21,9 +21,13 @@ from telegram.ext import (
 from brain import think
 from stt import transcribe
 from tts import synth_ogg
+from security_utils import sign_answer_link
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("hermes")
+# httpx logs full request URLs; Telegram URLs contain the bot token.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 async def cmd_start(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -42,14 +46,16 @@ async def cmd_call(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     import os
     import urllib.parse
     config.save_chat_id(update.effective_chat.id)
-    hub = os.getenv("HUB_PUBLIC_URL", "").rstrip("/")
+    public_enabled = os.getenv("ENABLE_PUBLIC_TUNNEL", "0").lower() in {"1", "true", "yes"}
+    hub = os.getenv("HUB_PUBLIC_URL" if public_enabled else "LOCAL_HUB_URL", "").rstrip("/")
     if not hub:
         await update.message.reply_text("Live calls not configured (HUB_PUBLIC_URL).")
         return
     topic = " ".join(update.message.text.split()[1:]).strip()
-    url = f"{hub}/answer"
-    if topic:
-        url += "?nudge=" + urllib.parse.quote(f"The user started this call about: {topic}")
+    nudge = f"The user started this call about: {topic}" if topic else ""
+    expires, signature = sign_answer_link(nudge)
+    query = urllib.parse.urlencode({"nudge": nudge, "expires": expires, "sig": signature})
+    url = f"{hub}/answer?{query}"
     await update.message.reply_text(
         "📞 Live call ready — tap the button to talk to Hermes:",
         reply_markup=InlineKeyboardMarkup(

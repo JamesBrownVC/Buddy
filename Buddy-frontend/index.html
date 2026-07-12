@@ -603,6 +603,19 @@
     const params = new URLSearchParams(location.search);
     const defaultApi = location.hostname ? `${location.protocol}//${location.hostname}:8484` : "http://localhost:8484";
     const apiBase = (params.get("api") || defaultApi).replace(/\/+$/, "");
+    const hashParams = new URLSearchParams(location.hash.replace(/^#/, ""));
+    const hashToken = hashParams.get("token") || "";
+    if (hashToken) {
+      sessionStorage.setItem("buddy_dashboard_token", hashToken);
+      history.replaceState(null, "", location.pathname + location.search);
+    }
+    const dashboardToken = hashToken || sessionStorage.getItem("buddy_dashboard_token") || "";
+    function apiFetch(path, options) {
+      const opts = Object.assign({}, options || {});
+      opts.headers = Object.assign({}, opts.headers || {},
+        dashboardToken ? { "X-Hermes-Secret": dashboardToken } : {});
+      return fetch(`${apiBase}${path}`, opts);
+    }
     const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     // ---------- shared live state ----------
@@ -1040,7 +1053,7 @@
     async function fetchProductivity() {
       let data = null;
       try {
-        const res = await fetch(`${apiBase}/api/agent-memory?name=bookkeeper`, { cache: "no-store" });
+        const res = await apiFetch(`/api/agent-memory?name=bookkeeper`, { cache: "no-store" });
         if (res.ok) data = await res.json();
       } catch (e) { /* keep deterministic fallback — never break the view */ }
       if (data && data.found) {
@@ -1236,7 +1249,7 @@
       let md = null, matched = null;
       for (const nm of info.docNames) {
         try {
-          const res = await fetch(`${apiBase}/api/agent-doc?name=${encodeURIComponent(nm)}`, { cache: "no-store" });
+          const res = await apiFetch(`/api/agent-doc?name=${encodeURIComponent(nm)}`, { cache: "no-store" });
           if (res.ok) {
             const data = await res.json();
             if (data && data.found && typeof data.markdown === "string" && data.markdown.trim()) {
@@ -1256,7 +1269,7 @@
             currentDocUrl = URL.createObjectURL(new Blob([md], { type: "text/markdown" }));
             raw.href = currentDocUrl;
           } catch (e) {
-            raw.href = `${apiBase}/api/agent-doc?name=${encodeURIComponent(matched || info.docNames[0])}`;
+            raw.removeAttribute("href");
           }
           raw.style.display = "";
         }
@@ -1329,7 +1342,7 @@
       const countEl = $("#drawer-mem-count");
       let data = null;
       try {
-        const res = await fetch(`${apiBase}/api/agent-memory?name=bookkeeper`, { cache: "no-store" });
+        const res = await apiFetch(`/api/agent-memory?name=bookkeeper`, { cache: "no-store" });
         if (res.ok) data = await res.json();
       } catch (e) { /* calm fallback below */ }
       if (reqId !== docReqId) return; // a newer node was opened meanwhile
@@ -1440,7 +1453,7 @@
     async function fetchDashboardState() {
       let ok = false;
       try {
-        const res = await fetch(`${apiBase}/api/dashboard-state`, { cache: "no-store" });
+        const res = await apiFetch(`/api/dashboard-state`, { cache: "no-store" });
         if (res.ok) {
           const data = await res.json();
           if (data && typeof data === "object") {
@@ -1476,7 +1489,7 @@
     // wired to the Orchestrator, so new agents appear in the graph automatically.
     async function augmentGeneratedAgents() {
       try {
-        const r = await fetch(`${apiBase}/api/agents`, { cache: "no-store" });
+        const r = await apiFetch(`/api/agents`, { cache: "no-store" });
         const data = await r.json();
         let added = 0, gi = 0;
         (data.agents || []).forEach((a) => {

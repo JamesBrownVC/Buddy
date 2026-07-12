@@ -21,13 +21,22 @@ service just gets skipped — the loop never crashes. Stdlib only.
 """
 
 import json
+import os
 import random
 import time
 import urllib.request
+from urllib.parse import urlsplit
 from datetime import datetime
+from pathlib import Path
 
 BROWSER_API = "http://127.0.0.1:8080"      # stealth browser (Camoufox in Docker)
 HUB = "http://127.0.0.1:8484"              # FastAPI hub
+_env_file = Path(__file__).resolve().parent / ".env"
+for _line in (_env_file.read_text(encoding="utf-8") if _env_file.exists() else "").splitlines():
+    if "=" in _line and not _line.strip().startswith("#"):
+        _key, _, _value = _line.partition("=")
+        os.environ.setdefault(_key.strip(), _value.strip())
+HUB_SECRET = os.getenv("HUB_SECRET", "")
 
 # Real, safe, visually-interesting pages to rotate the live browser through.
 URLS = [
@@ -65,11 +74,15 @@ FACTS = [
 def _post(url, payload, timeout=12):
     """POST json, return decoded dict or None. Never raises."""
     try:
+        if urlsplit(url).scheme not in {"http", "https"}:
+            return None
         data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            url, data=data, headers={"Content-Type": "application/json"}, method="POST"
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        headers = {"Content-Type": "application/json"}
+        if url.startswith(HUB) and HUB_SECRET:
+            headers["X-Hermes-Secret"] = HUB_SECRET
+        req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+        # The URL scheme is allowlisted immediately above.
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310
             return json.loads(resp.read().decode("utf-8") or "{}")
     except Exception:
         return None

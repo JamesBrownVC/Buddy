@@ -16,10 +16,14 @@ import sys
 import urllib.parse
 
 import config  # first: applies the Windows SSL cert-store fix
+from security_utils import sign_answer_link
 
 from telegram import Bot
 
-HUB_PUBLIC_URL = os.getenv("HUB_PUBLIC_URL", "").rstrip("/")
+_public_enabled = os.getenv("ENABLE_PUBLIC_TUNNEL", "0").lower() in {"1", "true", "yes"}
+HUB_PUBLIC_URL = os.getenv(
+    "HUB_PUBLIC_URL" if _public_enabled else "LOCAL_HUB_URL", ""
+).rstrip("/")
 
 
 async def ring(nudge: str) -> None:
@@ -29,9 +33,9 @@ async def ring(nudge: str) -> None:
     if not (config.BOT_TOKEN and chat_id):
         raise SystemExit("Telegram not configured (token + /start first)")
 
-    url = f"{HUB_PUBLIC_URL}/answer"
-    if nudge:
-        url += "?nudge=" + urllib.parse.quote(nudge)
+    expires, signature = sign_answer_link(nudge)
+    query = urllib.parse.urlencode({"nudge": nudge, "expires": expires, "sig": signature})
+    url = f"{HUB_PUBLIC_URL}/answer?{query}"
 
     async with Bot(config.BOT_TOKEN) as bot:
         await bot.send_message(

@@ -32,7 +32,7 @@ Buddy is a mesh of small, single-purpose agents behind one hub, running entirely
    you ── Telegram ────►│  (persona: evidence-based ADHD body-double)  │
                         └───────────────┬──────────────────────────────┘
                                         │ webhook tools (ask_agent, remember, …)
-                              cloudflared tunnel
+                         optional authenticated tunnel
                                         │
                         ┌───────────────▼───────────────┐
                         │        Hub  (FastAPI :8484)    │
@@ -137,7 +137,7 @@ The network has three kinds of node, unified by the one `/ask` text contract so 
 
 ## Quick start (macOS)
 
-Prerequisites: Python 3.11 · Docker (Colima) · cloudflared · ffmpeg · a Telegram bot token · OpenAI + ElevenLabs API keys.
+Prerequisites: Python 3.11 · Docker (Colima) · ffmpeg · a Telegram bot token · OpenAI + ElevenLabs API keys. `cloudflared` is optional and disabled by default.
 
 ```bash
 cd telegram_voice
@@ -154,14 +154,15 @@ docker run -d --name browser --restart unless-stopped \
 # create the per-agent Hermes brains (needs Hermes installed + OPENAI_API_KEY set)
 .venv/bin/python setup_hermes_brains.py
 
-# the whole stack: terra proxy + Hermes brains + hub + tunnel + bot + agents
+# the whole stack: terra proxy + Hermes brains + private local hub + bot + agents
 .venv/bin/python start_all_mac.py
 
 # provision the ElevenLabs agent + its webhook tools
 .venv/bin/python setup_elevenlabs.py "<the tunnel URL printed above>"
 ```
 
-Dashboard: `http://<lan-ip>:5500` · Live browser: `http://<lan-ip>:5900` · Telegram: `/start`, then `/call`.
+Open the authenticated local dashboard with `.venv/bin/python open_dashboard.py`.
+Remote access is opt-in; read [SECURITY.md](SECURITY.md) before enabling it.
 
 ---
 
@@ -169,7 +170,10 @@ Dashboard: `http://<lan-ip>:5500` · Live browser: `http://<lan-ip>:5900` · Tel
 
 - Secrets live only in `.env` (gitignored); the repo ships `.env.example`.
 - Runtime state, memory JSON, and browser sessions are gitignored.
-- The hub exposes only read-only doc/memory endpoints without auth; agent routing endpoints can be gated with a shared secret (`HUB_SECRET`).
+- The hub binds to loopback and public tunnelling is disabled by default.
+- All memory, dashboard, mutation, routing, and documentation endpoints require a generated `HUB_SECRET`.
+- Call links expire, ElevenLabs sessions use signed URLs, and post-call webhooks require HMAC verification.
+- See [SECURITY.md](SECURITY.md) for the remote-access checklist and disclosure process.
 
 ## License & contributing
 

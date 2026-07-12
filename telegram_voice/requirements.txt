@@ -3,8 +3,9 @@
 fastapi==0.139.0
 uvicorn==0.51.0
 httpx==0.28.1
+websockets==16.1
 pydantic==2.13.4
-python-dotenv==1.0.1
+python-dotenv==1.2.2
 certifi==2026.6.17
 
 # Telegram voice bridge

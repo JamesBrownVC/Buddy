@@ -20,6 +20,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 # load .env once (shared by every agent module)
@@ -72,7 +73,7 @@ def make_agent_app(name: str, brain_port: int, brain_key: str,
             return {"reply": f"My Hermes runtime is unavailable right now ({e})."}
 
     @app.get("/health")
-    def health() -> dict:
+    def health() -> JSONResponse:
         # the service is only healthy if its Hermes brain answers
         brain = False
         try:
@@ -81,7 +82,8 @@ def make_agent_app(name: str, brain_port: int, brain_key: str,
                               timeout=2).status_code == 200
         except Exception:
             brain = False
-        return {"ok": True, "agent": name, "runtime": "hermes",
-                "brain": "up" if brain else "down"}
+        payload = {"ok": brain, "agent": name, "runtime": "hermes",
+                   "brain": "up" if brain else "down"}
+        return JSONResponse(payload, status_code=200 if brain else 503)
 
     return app

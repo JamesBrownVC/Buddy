@@ -21,7 +21,7 @@ then use https://<tunnel>/<endpoint> as each tool's URL in the dashboard.
 from __future__ import annotations
 
 import datetime as dt
-import html
+import ipaddress
 import json
 import logging
 import os
@@ -30,9 +30,10 @@ import config  # first: applies the Windows SSL cert-store fix
 
 import re
 from pathlib import Path
+from urllib.parse import urlencode, urlsplit
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -79,7 +80,20 @@ SUBSCRIBERS_FILE = None  # set below after STATE_DIR
 async def _auth(request: Request, call_next):
     """Shared-secret auth for everything except the public pages.
     ElevenLabs tools and remote agents send X-Hermes-Secret."""
-    if request.url.path not in PUBLIC_PATHS:
+    # Preserve the original zero-friction localhost dashboard. Cloudflare adds
+    # proxy headers to every tunneled request, so those requests must still
+    # authenticate even though cloudflared connects to this process locally.
+    client_host = request.client.host if request.client else ""
+    try:
+        direct_loopback = ipaddress.ip_address(client_host).is_loopback
+    except ValueError:
+        direct_loopback = False
+    came_through_proxy = any(request.headers.get(name) for name in (
+        "cf-connecting-ip", "cf-ray", "x-forwarded-for", "forwarded"
+    ))
+    trusted_local = direct_loopback and not came_through_proxy
+
+    if request.url.path not in PUBLIC_PATHS and not trusted_local:
         supplied = request.headers.get("x-hermes-secret", "")
         auth = request.headers.get("authorization", "")
         if auth.lower().startswith("bearer "):
@@ -342,6 +356,18 @@ async def webhook_event(e: Event) -> dict:
 @app.post("/webhook/subscribe")
 def webhook_subscribe(s: Subscribe) -> dict:
     """Remote agent registers a callback URL to receive the event stream."""
+    allowed_hosts = {
+        host.strip().lower()
+        for host in os.getenv("REMOTE_SUBSCRIBER_HOSTS", "").split(",")
+        if host.strip()
+    }
+    parsed = urlsplit(s.url)
+    if parsed.scheme != "https" or not parsed.hostname \
+            or parsed.hostname.lower() not in allowed_hosts:
+        raise HTTPException(
+            status_code=403,
+            detail="subscriber host is not explicitly allowed",
+        )
     subs = _subscribers()
     if s.url not in subs:
         subs.append(s.url)
@@ -350,13 +376,7 @@ def webhook_subscribe(s: Subscribe) -> dict:
     return {"ok": True, "subscribers": len(subs)}
 
 
-@app.get("/answer", response_class=HTMLResponse)
-def answer(nudge: str = "", expires: int = 0, sig: str = "") -> HTMLResponse:
-    """Tap-to-answer page: live WebRTC voice call with Hermes, no telephony.
-    Hermes 'rings' via Telegram with a link here; ?nudge= is passed to the
-    agent as the {{nudge_context}} dynamic variable."""
-    if len(nudge) > 1000 or not verify_answer_link(nudge, expires, sig):
-        raise HTTPException(status_code=403, detail="invalid or expired call link")
+def _elevenlabs_signed_url() -> str:
     agent_id = os.getenv("EL_AGENT_ID", "")
     api_key = os.getenv("ELEVENLABS_API_KEY", "")
     if not agent_id or not api_key:
@@ -369,39 +389,28 @@ def answer(nudge: str = "", expires: int = 0, sig: str = "") -> HTMLResponse:
             timeout=15,
         )
         signed.raise_for_status()
-        signed_url = signed.json()["signed_url"]
+        return signed.json()["signed_url"]
     except Exception as exc:
         log.warning("failed to create ElevenLabs signed URL: %s", exc)
         raise HTTPException(status_code=502, detail="voice session unavailable") from exc
-    dyn = html.escape(json.dumps({"nudge_context": nudge}), quote=True)
-    signed_attr = html.escape(signed_url, quote=True)
-    body = f"""<!doctype html><html><head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Hermes calling…</title>
-<style>
- body{{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;
- justify-content:center;background:#0f1117;color:#eee;font-family:system-ui;gap:12px}}
- .pulse{{font-size:64px;animation:p 1.2s infinite}}
- @keyframes p{{50%{{transform:scale(1.15)}}}}
-</style></head><body>
-<div class="pulse">📞</div>
-<h2>Hermes is calling</h2>
-<p>You are about to speak with an AI assistant. Voice is processed by ElevenLabs;
-Buddy is configured not to retain call audio and to delete hosted conversation data.</p>
-<p>Tap the widget below to answer</p>
-<elevenlabs-convai signed-url="{signed_attr}" dynamic-variables='{dyn}'></elevenlabs-convai>
-<script src="https://unpkg.com/@elevenlabs/convai-widget-embed@0.14.8" async></script>
-</body></html>"""
-    return HTMLResponse(
-        body,
-        headers={
-            "Content-Security-Policy": (
-                "default-src 'none'; script-src https://unpkg.com; "
-                "style-src 'unsafe-inline'; connect-src https://api.elevenlabs.io "
-                "wss://api.elevenlabs.io; img-src data: https:; media-src blob:"
-            )
-        },
-    )
+
+
+@app.post("/api/voice-session")
+def voice_session() -> dict:
+    """Create a 15-minute ElevenLabs session for an authenticated dashboard."""
+    return {"signed_url": _elevenlabs_signed_url()}
+
+
+@app.get("/answer")
+def answer(nudge: str = "", expires: int = 0, sig: str = "") -> RedirectResponse:
+    """Validate Buddy's link, then use ElevenLabs' reliable mobile call page."""
+    if len(nudge) > 1000 or not verify_answer_link(nudge, expires, sig):
+        raise HTTPException(status_code=403, detail="invalid or expired call link")
+    agent_id = os.getenv("EL_AGENT_ID", "")
+    if not agent_id:
+        raise HTTPException(status_code=503, detail="voice agent is not configured")
+    query = urlencode({"agent_id": agent_id, "var_nudge_context": nudge})
+    return RedirectResponse(f"https://elevenlabs.io/app/talk-to?{query}", status_code=302)
 
 
 class ToggleReq(BaseModel):

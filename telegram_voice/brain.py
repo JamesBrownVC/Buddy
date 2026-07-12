@@ -1,13 +1,14 @@
 """The 'brain' that turns a user transcript into Hermes's reply.
 
 Resolution order:
-1. BRAIN_CMD from .env (shell command; {text} is replaced with the transcript)
+1. BRAIN_CMD from .env (argument template; {text} is replaced with transcript)
 2. `claude -p` CLI if installed (Claude Code as the brain)
 3. Built-in canned body-double reply (never fails, demo-safe)
 """
 from __future__ import annotations
 
 import shutil
+import shlex
 import subprocess
 
 from config import BRAIN_CMD
@@ -20,10 +21,10 @@ HERMES_STYLE = (
 )
 
 
-def _run(cmd: str | list[str], shell: bool = False) -> str | None:
+def _run(cmd: list[str]) -> str | None:
     try:
         out = subprocess.run(
-            cmd, shell=shell, capture_output=True, text=True,
+            cmd, shell=False, capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=120,
         )
         reply = (out.stdout or "").strip()
@@ -70,7 +71,13 @@ def _openai(style: str, text: str) -> str | None:
 def think(text: str, persona: str = "") -> str:
     style = persona or HERMES_STYLE
     if BRAIN_CMD:
-        reply = _run(BRAIN_CMD.replace("{text}", text.replace('"', "'")), shell=True)
+        import os
+        command = shlex.split(BRAIN_CMD, posix=os.name != "nt")
+        if any("{text}" in arg for arg in command):
+            command = [arg.replace("{text}", text) for arg in command]
+        else:
+            command.append(text)
+        reply = _run(command)
         if reply:
             return reply
 

@@ -21,12 +21,23 @@ SELF_AGENT is passed so an agent never calls itself into a loop.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import httpx
 from mcp.server.fastmcp import FastMCP
 
+# Hermes MCP subprocesses do not necessarily inherit Buddy's .env, so load the
+# shared-secret locally without logging it or copying it into profile configs.
+_env_file = Path(__file__).resolve().parents[1] / ".env"
+for _line in (_env_file.read_text(encoding="utf-8") if _env_file.exists() else "").splitlines():
+    if "=" in _line and not _line.strip().startswith("#"):
+        _key, _, _value = _line.partition("=")
+        os.environ.setdefault(_key.strip(), _value.strip())
+
 HUB = os.getenv("HERMES_HUB", "http://127.0.0.1:8484").rstrip("/")
 SELF = os.getenv("SELF_AGENT", "").strip().lower()
+HUB_HEADERS = ({"X-Hermes-Secret": os.getenv("HUB_SECRET", "")}
+               if os.getenv("HUB_SECRET", "") else {})
 
 mcp = FastMCP("agent_bridge")
 
@@ -36,7 +47,7 @@ def list_agents() -> str:
     """List the other agents you can message, with a one-line role for each.
     Use this to decide who to delegate a subtask to."""
     try:
-        r = httpx.get(f"{HUB}/api/agents", timeout=10)
+        r = httpx.get(f"{HUB}/api/agents", headers=HUB_HEADERS, timeout=10)
         rows = []
         for a in r.json().get("agents", []):
             if a["name"].lower() == SELF:
@@ -61,6 +72,7 @@ def ask_agent(agent: str, message: str) -> str:
         return "that's you — answer it yourself instead of delegating"
     try:
         r = httpx.post(f"{HUB}/agents/ask",
+                       headers=HUB_HEADERS,
                        json={"agent": target, "message": message,
                              "from": SELF or "agent"}, timeout=90)
         return r.json().get("reply", "") or "(empty reply)"

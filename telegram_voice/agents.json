@@ -26,7 +26,7 @@
   "browser": {
     "type": "http",
     "url": "http://localhost:9103/ask",
-    "description": "operates the LIVE WEB through a real stealth browser: looks up current facts/news/prices/weather, reads any website, AND logs into and acts on the user's web apps — WhatsApp Web, Gmail and other email, Slack, Notion, Google, calendars, etc. (open, read, click, type, fill forms). Route here anything needing the live web or any online app/service."
+    "description": "operates the LIVE WEB through a real stealth browser: looks up current facts/news/prices/weather, reads any website, AND logs into and acts on the user's web apps \u2014 WhatsApp Web, Gmail and other email, Slack, Notion, Google, calendars, etc. (open, read, click, type, fill forms). Route here anything needing the live web or any online app/service."
   },
   "orchestrator": {
     "type": "http",
@@ -62,7 +62,7 @@
   "audit": {
     "type": "http",
     "url": "http://localhost:9109/ask",
-    "description": "reviews how the network performs (each action vs its ask, latency, failures) and requests surgical improvements — tools from the toolsmith, agents from the builder",
+    "description": "reviews how the network performs (each action vs its ask, latency, failures) and requests surgical improvements \u2014 tools from the toolsmith, agents from the builder",
     "brain_port": 8649,
     "agent_port": 9109
   }

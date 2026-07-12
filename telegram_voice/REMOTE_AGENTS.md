@@ -63,8 +63,9 @@ uvicorn, add the registry line.
 
 ## When the hub itself moves to the VPS/Mac mini
 
-The hub is portable (pure Python + ffmpeg). On a box with a public address
-you drop cloudflared entirely: set `HUB_PUBLIC_URL` to the real host, run
+The hub is portable (pure Python + ffmpeg). On a box with a public address,
+place it behind an authenticated HTTPS reverse proxy, keep Buddy's own
+`HUB_SECRET` checks enabled, set `HUB_PUBLIC_URL` to that host, then run
 `setup_elevenlabs.py https://your-host` once. The only Windows-specific
 tool is `check_screen` (pygetwindow) — invert it: run a tiny sensor on the
 desktop that POSTs the active window to `/webhook/event` every 15s, and

@@ -227,6 +227,16 @@ def main(base_url: str) -> None:
             "tts": {"voice_id": VOICE_ID},
         },
         "platform_settings": {
+            "widget": {
+                "variant": "full",
+                "expandable": "always",
+                "default_expanded": True,
+                "always_expanded": True,
+                "dismissible": False,
+                "action_text": "Buddy is calling",
+                "start_call_text": "Answer call",
+                "show_avatar_when_collapsed": True,
+            },
             "overrides": {
                 "conversation_config_override": {
                     "agent": {"first_message": True, "prompt": {"prompt": True}}
@@ -259,6 +269,8 @@ def main(base_url: str) -> None:
 
 
 if __name__ == "__main__":
-    base = sys.argv[1].rstrip("/") if len(sys.argv) > 1 else \
-        "https://radiation-packet-revision-usr.trycloudflare.com"
-    main(base)
+    if len(sys.argv) < 2 or not sys.argv[1].startswith("https://"):
+        raise SystemExit(
+            "Pass the authenticated HTTPS hub URL explicitly; see SECURITY.md"
+        )
+    main(sys.argv[1].rstrip("/"))

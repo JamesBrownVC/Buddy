@@ -10,12 +10,16 @@ Then:    reads the fresh tunnel URL, writes HUB_PUBLIC_URL to .env, and
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+import config  # loads the ignored local .env
+from security_utils import ensure_env_secret, set_env_value
 
 HERE = Path(__file__).resolve().parent
 PY = HERE / ".venv" / "bin" / "python"
@@ -47,6 +51,11 @@ HERMES_BRAINS = [  # (profile, api port) — one Hermes instance per agent brain
 
 
 def main() -> None:
+    ensure_env_secret()
+    bind_host = os.getenv("BUDDY_BIND_HOST", "127.0.0.1")
+    public_tunnel = os.getenv("ENABLE_PUBLIC_TUNNEL", "0").lower() in {
+        "1", "true", "yes"
+    }
     print("[0a/6] terra proxy :8650 (gpt-5.6-terra for the Hermes brains)")
     spawn([str(PY), "-m", "uvicorn", "terra_proxy:app", "--port", "8650"],
           "terra_proxy.log")
@@ -72,44 +81,43 @@ def main() -> None:
             print(f"      (profile {profile} missing — skipped)")
 
     print("[1/6] agent hub :8484")
-    spawn([str(PY), "-m", "uvicorn", "agent_hub:app", "--host", "0.0.0.0", "--port", "8484"], "hub.log")
+    spawn([str(PY), "-m", "uvicorn", "agent_hub:app", "--host", bind_host,
+           "--port", "8484"], "hub.log")
 
-    print("[2/5] cloudflared tunnel…")
-    tun = subprocess.Popen(
-        [CLOUDFLARED, "tunnel", "--url", "http://localhost:8484"],
-        cwd=HERE, stderr=subprocess.PIPE, text=True, errors="replace",
-    )
-    procs.append(tun)
     url = ""
-    deadline = time.time() + 60
-    for line in tun.stderr:
-        m = URL_RE.search(line)
-        if m:
-            url = m.group(0)
-            break
-        if time.time() > deadline:
-            break
-    # keep draining stderr in the background so the pipe never fills
-    subprocess.Popen(["cat"], stdin=tun.stderr,
-                     stdout=open(LOGS / "tunnel.log", "a"))
-    if not url:
-        raise SystemExit("tunnel URL not found — is cloudflared installed?")
-    print(f"      tunnel: {url}")
-
-    env_path = HERE / ".env"
-    env = env_path.read_text()
-    if "HUB_PUBLIC_URL=" in env:
-        env = re.sub(r"^HUB_PUBLIC_URL=.*$", f"HUB_PUBLIC_URL={url}", env, flags=re.M)
+    if public_tunnel:
+        print("[2/6] cloudflared tunnel (explicitly enabled)…")
+        tun = subprocess.Popen(
+            [CLOUDFLARED, "tunnel", "--url", "http://localhost:8484"],
+            cwd=HERE, stderr=subprocess.PIPE, text=True, errors="replace",
+        )
+        procs.append(tun)
+        deadline = time.time() + 60
+        for line in tun.stderr:
+            m = URL_RE.search(line)
+            if m:
+                url = m.group(0)
+                break
+            if time.time() > deadline:
+                break
+        subprocess.Popen(["cat"], stdin=tun.stderr,
+                         stdout=open(LOGS / "tunnel.log", "a"))
+        if not url:
+            raise SystemExit("tunnel URL not found — disable ENABLE_PUBLIC_TUNNEL or install cloudflared")
+        os.environ["HUB_PUBLIC_URL"] = url
+        set_env_value("HUB_PUBLIC_URL", url)
+        set_env_value("ENABLE_PUBLIC_TUNNEL", "1")
+        print(f"      secured application endpoint: {url}")
+        print("[3/6] updating authenticated ElevenLabs tools…")
+        r = subprocess.run([str(PY), "setup_elevenlabs.py", url], cwd=HERE)
+        if r.returncode != 0:
+            print("      WARNING: setup_elevenlabs failed — live-call tools were not updated")
     else:
-        env += f"\nHUB_PUBLIC_URL={url}\n"
-    env_path.write_text(env)
+        os.environ["HUB_PUBLIC_URL"] = os.getenv("LOCAL_HUB_URL", "")
+        set_env_value("ENABLE_PUBLIC_TUNNEL", "0")
+        print("[2/6] public tunnel disabled (local-only mode)")
 
-    print("[3/5] re-pointing ElevenLabs tools at the new URL…")
-    r = subprocess.run([str(PY), "setup_elevenlabs.py", url], cwd=HERE)
-    if r.returncode != 0:
-        print("      WARNING: setup_elevenlabs failed — live-call tools may point at the old URL")
-
-    print("[4/5] telegram bot listener")
+    print("[4/6] telegram bot listener")
     spawn([str(PY), "bot.py"], "bot.log")
 
     print("[5/6] network agents: bookkeeper :9102 browser :9103 "
@@ -132,8 +140,10 @@ def main() -> None:
     except Exception as e:
         print(f"      (no generated agents: {e})")
 
-    print("\nHermes stack UP (all local on the Mac mini).")
-    print(f"Hub public URL: {url}")
+    print("\nHermes stack UP (local-only by default).")
+    if url:
+        print(f"Public URL: {url} (signed call links + authenticated tools)")
+    print("Private dashboard: .venv/bin/python open_dashboard.py")
     print("Logs: telegram_voice/state/*.log — Ctrl+C stops everything.")
     try:
         while True:

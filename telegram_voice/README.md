@@ -59,7 +59,8 @@ Everything runs from the bundled venv: `telegram_voice\.venv\Scripts\python.exe`
 `brain.py` picks, in order: `BRAIN_CMD` from `.env` → the `claude` CLI
 (`claude -p`) → a built-in body-double reply. Point `BRAIN_CMD` at Hermes's
 own reasoning endpoint to make it Hermes-native, e.g.
-`BRAIN_CMD=curl -s http://localhost:8080/think -d "{text}"`.
+`BRAIN_CMD=curl -s http://localhost:8080/think -d "{text}"`. Commands are
+parsed as argument arrays; shell operators such as pipes are intentionally not executed.
 
 ### Proactive nudges
 `call.py` is a one-shot CLI, so any scheduler works:
@@ -113,8 +114,8 @@ so every capability is a swappable module. Full wiring guide + demo flow:
 **`TOOLS_SETUP.md`**.
 
 ```
-.venv\Scripts\python.exe -m uvicorn agent_hub:app --port 8484
-cloudflared tunnel --url http://localhost:8484
+.venv\Scripts\python.exe -m uvicorn agent_hub:app --host 127.0.0.1 --port 8484
+# Public tunnels are disabled by default. Follow ../SECURITY.md before opting in.
 ```
 
 ## Network agent modules (net_agents/)
