@@ -84,7 +84,12 @@ The network has three kinds of node, unified by the one `/ask` text contract so 
 
 - **Hermes autonomous agents** — the specialists (bookkeeper, browser, orchestrator) and the meta-agents (builder, repair, toolsmith). They reason.
 - **Deterministic tools** — MCP connectors the Toolsmith forges, attached to one agent. They don't reason.
-- **Lightweight utilities** — e.g. the **Router** (`net_agents/router.py`, :9108): a request an agent can't handle goes to the router, which makes *one* fast model call to pick the best agent and forwards it. Routing is a trivial classification, so it is deliberately **not** a Hermes agent — a full agent-loop there would just add latency in the critical path. Agents lean on the router when unsure who should handle something, instead of each reasoning over the whole (growing) roster.
+- **Lightweight utilities** — e.g. the **Router** (`net_agents/router.py`, :9108): a request an agent can't handle goes to the router, which makes *one* fast model call to pick the best agent and forwards it. Routing is a trivial classification, so it is deliberately **not** a Hermes agent — a full agent-loop there would just add latency in the critical path. Agents lean on the router when unsure who should handle something, instead of each reasoning over the whole (growing) roster. When the router can't place a request it escalates to the **orchestrator**, which force-routes or builds a new agent/tool.
+
+### Memory and self-audit
+
+- **Per-agent memory** (`net_mcp/memory_layer.py`): every agent has its own private memory (`state/memory/<agent>.jsonl`). Recall ranks by **relevance** (embedding similarity — a small RAG) × **recency** (a Gaussian "bell curve" around now, so recent things get the most attention) × **importance**, plus a non-decaying **long-term** layer. The bookkeeper additionally curates a durable profile of the user (it can ask the browser to mine the user's own email/calendar and keeps only the salient facts).
+- **Self-audit** (`net_agents/audit.py`, :9109): the hub logs every action to `state/task_log.jsonl` (the ask, the reply, latency, success, and the macro→micro delegation tree). The **Audit** agent (built by the Builder) reads that log, judges each action against its ask, and requests surgical improvements — a tool from the Toolsmith or a new agent from the Builder — conservatively, on repeated evidence.
 
 ### Design principles
 

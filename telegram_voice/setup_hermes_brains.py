@@ -62,7 +62,7 @@ mcp_servers:
 
 
 def _mcp_block(self_name: str, extras: list[str]) -> str:
-    servers = [("agent_bridge", "net_mcp.agent_bridge")] + \
+    servers = [("agent_bridge", "net_mcp.agent_bridge"), ("memory_layer", "net_mcp.memory_layer")] + \
         [(m.split(".")[-1], m) for m in extras]
     out = []
     for sid, mod in servers:

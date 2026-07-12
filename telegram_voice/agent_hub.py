@@ -21,6 +21,7 @@ then use https://<tunnel>/<endpoint> as each tool's URL in the dashboard.
 from __future__ import annotations
 
 import datetime as dt
+import html
 import json
 import logging
 import os
@@ -30,25 +31,39 @@ import config  # first: applies the Windows SSL cert-store fix
 import re
 from pathlib import Path
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from brain import think as brain_think
+from security_utils import verify_answer_link, verify_elevenlabs_signature
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("hub")
 
-app = FastAPI(title="Hermes agent hub")
+_docs_enabled = os.getenv("ENABLE_API_DOCS", "").lower() in {"1", "true", "yes"}
+app = FastAPI(
+    title="Hermes agent hub",
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url=None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
+)
 
-# Enable CORS for the frontend dashboard
+# Browser access is limited to the local dashboard unless explicitly extended.
+_cors_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ORIGINS", "http://127.0.0.1:5500,http://localhost:5500"
+    ).split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_cors_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Hermes-Secret"],
 )
 
 HUB_SECRET = os.getenv("HUB_SECRET", "")
@@ -56,12 +71,6 @@ PUBLIC_PATHS = {
     "/answer",
     "/health",
     "/post_call",
-    "/docs",
-    "/openapi.json",
-    "/api/dashboard-state",
-    "/api/toggle-step",
-    "/api/agent-doc",
-    "/api/agent-memory",
 }
 SUBSCRIBERS_FILE = None  # set below after STATE_DIR
 
@@ -70,10 +79,26 @@ SUBSCRIBERS_FILE = None  # set below after STATE_DIR
 async def _auth(request: Request, call_next):
     """Shared-secret auth for everything except the public pages.
     ElevenLabs tools and remote agents send X-Hermes-Secret."""
-    if HUB_SECRET and request.url.path not in PUBLIC_PATHS:
-        if request.headers.get("x-hermes-secret") != HUB_SECRET:
-            return JSONResponse({"detail": "unauthorized"}, status_code=401)
-    return await call_next(request)
+    if request.url.path not in PUBLIC_PATHS:
+        supplied = request.headers.get("x-hermes-secret", "")
+        auth = request.headers.get("authorization", "")
+        if auth.lower().startswith("bearer "):
+            supplied = auth[7:].strip()
+        import secrets as _secrets
+        if not HUB_SECRET or not _secrets.compare_digest(supplied, HUB_SECRET):
+            return JSONResponse(
+                {"detail": "unauthorized"},
+                status_code=401,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Permissions-Policy"] = "camera=(), geolocation=()"
+    if request.url.path != "/health":
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 MEMORY_FILE = config.STATE_DIR / "memory.md"
 WINS_FILE = config.STATE_DIR / "wins.md"
@@ -112,19 +137,19 @@ def _now() -> str:
 
 
 class Fact(BaseModel):
-    fact: str
+    fact: str = Field(min_length=1, max_length=4000)
 
 class Query(BaseModel):
-    query: str = ""
+    query: str = Field("", max_length=500)
 
 class Win(BaseModel):
-    what: str
+    what: str = Field(min_length=1, max_length=2000)
 
 class Question(BaseModel):
-    question: str
+    question: str = Field(min_length=1, max_length=8000)
 
 class Note(BaseModel):
-    message: str
+    message: str = Field(min_length=1, max_length=4000)
 
 
 @app.post("/screen_context")
@@ -184,26 +209,53 @@ async def notify_telegram(n: Note) -> dict:
 
 @app.post("/post_call")
 async def post_call(request: Request) -> dict:
-    """ElevenLabs post-call webhook: archive transcript, note the gist."""
-    payload = await request.json()
+    """Verified ElevenLabs post-call webhook; raw transcript storage is opt-in."""
+    content_length = request.headers.get("content-length", "")
+    if content_length.isdigit() and int(content_length) > 2_000_000:
+        raise HTTPException(status_code=413, detail="payload too large")
+    body = await request.body()
+    if len(body) > 2_000_000:
+        raise HTTPException(status_code=413, detail="payload too large")
+    webhook_secret = os.getenv("ELEVENLABS_WEBHOOK_SECRET", "")
+    signature = request.headers.get("elevenlabs-signature", "")
+    if not verify_elevenlabs_signature(body, signature, webhook_secret):
+        raise HTTPException(status_code=401, detail="invalid webhook signature")
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="invalid JSON") from exc
+    if payload.get("type") != "post_call_transcription":
+        return {"ok": True, "ignored": True}
     conv_id = payload.get("data", {}).get("conversation_id", "unknown")
-    (TRANSCRIPTS / f"{conv_id}.json").write_text(
-        json.dumps(payload, indent=2), encoding="utf-8"
-    )
+    if not isinstance(conv_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", conv_id):
+        raise HTTPException(status_code=400, detail="invalid conversation id")
+    transcript_file = TRANSCRIPTS / f"{conv_id}.json"
+    processed_file = TRANSCRIPTS / f".{conv_id}.processed"
+    try:
+        processed_file.touch(exist_ok=False)
+        already_processed = False
+    except FileExistsError:
+        already_processed = True
+    if os.getenv("STORE_CALL_TRANSCRIPTS", "0").lower() in {"1", "true", "yes"}:
+        transcript_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     summary = (payload.get("data", {}).get("analysis", {}) or {}).get(
         "transcript_summary", ""
     )
-    if summary:
+    if not isinstance(summary, str):
+        summary = ""
+    summary = summary[:4000]
+    if summary and not already_processed:
         with open(MEMORY_FILE, "a", encoding="utf-8") as fh:
             fh.write(f"- [{_now()}] call summary: {summary}\n")
-    log.info("post_call archived %s", conv_id)
-    await broadcast("call_ended", {"conversation_id": conv_id, "summary": summary})
-    return {"ok": True}
+    if not already_processed:
+        log.info("post_call processed %s", conv_id)
+        await broadcast("call_ended", {"conversation_id": conv_id, "summary": summary})
+    return {"ok": True, "duplicate": already_processed}
 
 
 class AgentAsk(BaseModel):
-    agent: str
-    message: str
+    agent: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")
+    message: str = Field(min_length=1, max_length=16_000)
     # who is asking: another agent's name, or "external" for a top-level task.
     # This turns the exchange log into a task tree (macro task -> sub-tasks).
     from_: str = Field("external", alias="from")
@@ -256,16 +308,16 @@ async def agents_ask(a: AgentAsk) -> dict:
 # ── Inbound webhooks: remote agents (VPS / Mac mini) drive Hermes ──────
 
 class RingReq(BaseModel):
-    nudge: str = ""
-    source: str = "remote-agent"
+    nudge: str = Field("", max_length=1000)
+    source: str = Field("remote-agent", max_length=100)
 
 class Event(BaseModel):
-    type: str
+    type: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.-]+$")
     data: dict = {}
-    source: str = "remote-agent"
+    source: str = Field("remote-agent", max_length=100)
 
 class Subscribe(BaseModel):
-    url: str
+    url: str = Field(min_length=1, max_length=2000)
 
 
 @app.post("/webhook/ring")
@@ -299,13 +351,31 @@ def webhook_subscribe(s: Subscribe) -> dict:
 
 
 @app.get("/answer", response_class=HTMLResponse)
-def answer(nudge: str = "") -> str:
+def answer(nudge: str = "", expires: int = 0, sig: str = "") -> HTMLResponse:
     """Tap-to-answer page: live WebRTC voice call with Hermes, no telephony.
     Hermes 'rings' via Telegram with a link here; ?nudge= is passed to the
     agent as the {{nudge_context}} dynamic variable."""
+    if len(nudge) > 1000 or not verify_answer_link(nudge, expires, sig):
+        raise HTTPException(status_code=403, detail="invalid or expired call link")
     agent_id = os.getenv("EL_AGENT_ID", "")
-    dyn = json.dumps({"nudge_context": nudge})
-    return f"""<!doctype html><html><head>
+    api_key = os.getenv("ELEVENLABS_API_KEY", "")
+    if not agent_id or not api_key:
+        raise HTTPException(status_code=503, detail="voice agent is not configured")
+    try:
+        signed = httpx.get(
+            "https://api.elevenlabs.io/v1/convai/conversation/get-signed-url",
+            params={"agent_id": agent_id},
+            headers={"xi-api-key": api_key},
+            timeout=15,
+        )
+        signed.raise_for_status()
+        signed_url = signed.json()["signed_url"]
+    except Exception as exc:
+        log.warning("failed to create ElevenLabs signed URL: %s", exc)
+        raise HTTPException(status_code=502, detail="voice session unavailable") from exc
+    dyn = html.escape(json.dumps({"nudge_context": nudge}), quote=True)
+    signed_attr = html.escape(signed_url, quote=True)
+    body = f"""<!doctype html><html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Hermes calling…</title>
 <style>
@@ -316,10 +386,22 @@ def answer(nudge: str = "") -> str:
 </style></head><body>
 <div class="pulse">📞</div>
 <h2>Hermes is calling</h2>
+<p>You are about to speak with an AI assistant. Voice is processed by ElevenLabs;
+Buddy is configured not to retain call audio and to delete hosted conversation data.</p>
 <p>Tap the widget below to answer</p>
-<elevenlabs-convai agent-id="{agent_id}" dynamic-variables='{dyn}'></elevenlabs-convai>
-<script src="https://unpkg.com/@elevenlabs/convai-widget-embed" async></script>
+<elevenlabs-convai signed-url="{signed_attr}" dynamic-variables='{dyn}'></elevenlabs-convai>
+<script src="https://unpkg.com/@elevenlabs/convai-widget-embed@0.14.8" async></script>
 </body></html>"""
+    return HTMLResponse(
+        body,
+        headers={
+            "Content-Security-Policy": (
+                "default-src 'none'; script-src https://unpkg.com; "
+                "style-src 'unsafe-inline'; connect-src https://api.elevenlabs.io "
+                "wss://api.elevenlabs.io; img-src data: https:; media-src blob:"
+            )
+        },
+    )
 
 
 class ToggleReq(BaseModel):

@@ -64,6 +64,12 @@ agent:
 platform_toolsets:
   api_server: [todo]
 mcp_servers:
+  memory_layer:
+    command: "{hvenv}"
+    args: ["-m", "net_mcp.memory_layer"]
+    env:
+      SELF_AGENT: "{name}"
+      PYTHONPATH: "{tv}"
   agent_bridge:
     command: "{hvenv}"
     args: ["-m", "net_mcp.agent_bridge"]
