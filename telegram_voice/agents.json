@@ -53,5 +53,10 @@
     "description": "forges deterministic tools and attaches them to the right agent",
     "brain_port": 8648,
     "agent_port": 9107
+  },
+  "router": {
+    "type": "http",
+    "url": "http://localhost:9108/ask",
+    "description": "ask me when you are unsure which agent should handle something or you cannot do it yourself; I route your request to the right agent and return its answer"
   }
 }

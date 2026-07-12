@@ -78,6 +78,14 @@ Not every capability needs a reasoning agent. A weather lookup is a *determinist
 
 The guiding rule is **minimal tools per agent**: each agent carries only `agent_bridge` (for delegation) plus a small, minimal built-in toolset (`platform_toolsets: {api_server: [todo]}`, so agents don't wander into `execute_code`/terminal) and at most its own role tool. When an agent needs a capability it doesn't own, it **asks the specialist that does** — e.g. the bookkeeper doesn't carry a weather tool; asked about the weather it delegates to the browser agent, which owns `get_weather`. Specialized agents collaborating beats one agent with a hundred tools.
 
+### Not everything is a Hermes agent
+
+The network has three kinds of node, unified by the one `/ask` text contract so they're interchangeable to callers:
+
+- **Hermes autonomous agents** — the specialists (bookkeeper, browser, orchestrator) and the meta-agents (builder, repair, toolsmith). They reason.
+- **Deterministic tools** — MCP connectors the Toolsmith forges, attached to one agent. They don't reason.
+- **Lightweight utilities** — e.g. the **Router** (`net_agents/router.py`, :9108): a request an agent can't handle goes to the router, which makes *one* fast model call to pick the best agent and forwards it. Routing is a trivial classification, so it is deliberately **not** a Hermes agent — a full agent-loop there would just add latency in the critical path. Agents lean on the router when unsure who should handle something, instead of each reasoning over the whole (growing) roster.
+
 ### Design principles
 
 1. **Agents are Hermes runtimes, not prompts.** Each agent is an independent Hermes process with its own persona, tools, and MCP peer-messaging. Kill one, the rest keep running; the hub degrades gracefully.

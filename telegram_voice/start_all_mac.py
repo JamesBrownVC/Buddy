@@ -115,7 +115,7 @@ def main() -> None:
           "orchestrator :9104 builder :9105 repair :9106")
     for name, port in [("bookkeeper", 9102), ("browser", 9103),
                        ("orchestrator", 9104), ("builder", 9105),
-                       ("repair", 9106), ("toolsmith", 9107)]:
+                       ("repair", 9106), ("toolsmith", 9107), ("router", 9108)]:
         spawn([str(PY), "-m", "uvicorn", f"net_agents.{name}:app",
                "--port", str(port)], f"{name}.log")
 

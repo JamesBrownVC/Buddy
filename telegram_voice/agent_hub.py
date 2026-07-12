@@ -690,7 +690,7 @@ def api_agents() -> dict:
     import httpx as _httpx
     static = {
         "bookkeeper": 9102, "browser": 9103, "orchestrator": 9104,
-        "builder": 9105, "repair": 9106, "toolsmith": 9107,
+        "builder": 9105, "repair": 9106, "toolsmith": 9107, "router": 9108,
     }
     reg = {}
     try:
