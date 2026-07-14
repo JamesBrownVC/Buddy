@@ -20,3 +20,10 @@ telegram_voice/state/*.key
 
 # builder/toolsmith runtime artifacts
 telegram_voice/net_mcp/generated/
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
