@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+import socket
 import subprocess
 import sys
 import time
@@ -19,7 +20,8 @@ import config  # loads the ignored local .env
 from security_utils import ensure_env_secret, set_env_value
 
 HERE = Path(__file__).resolve().parent
-PY = HERE / ".venv" / "Scripts" / "python.exe"
+PY = Path(sys.executable)
+DASHBOARD = HERE.parent / "Buddy-frontend"
 CLOUDFLARED = r"C:\Program Files (x86)\cloudflared\cloudflared.exe"
 URL_RE = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
 
@@ -34,12 +36,28 @@ def spawn(args: list[str], **kw) -> subprocess.Popen:
 
 def main() -> None:
     ensure_env_secret()
+    if not (DASHBOARD / "index.html").is_file():
+        raise SystemExit(f"Dashboard files are missing: {DASHBOARD}")
     public_tunnel = os.getenv("ENABLE_PUBLIC_TUNNEL", "0").lower() in {
         "1", "true", "yes"
     }
     print("[1/4] agent hub :8484")
     spawn([str(PY), "-m", "uvicorn", "agent_hub:app", "--host",
            os.getenv("BUDDY_BIND_HOST", "127.0.0.1"), "--port", "8484"])
+
+    print("[1b/4] private dashboard :5500")
+    dashboard = spawn([str(PY), "-m", "http.server", "5500", "--bind",
+                       "127.0.0.1", "--directory", str(DASHBOARD)])
+    for _ in range(50):
+        if dashboard.poll() is not None:
+            raise SystemExit("Dashboard failed to start (check whether port 5500 is in use)")
+        try:
+            with socket.create_connection(("127.0.0.1", 5500), timeout=0.2):
+                break
+        except OSError:
+            time.sleep(0.1)
+    else:
+        raise SystemExit("Dashboard did not become available on port 5500")
 
     url = ""
     if public_tunnel:
@@ -81,15 +99,17 @@ def main() -> None:
     try:
         while True:
             time.sleep(5)
-            for p in procs:
+            for p in procs[:]:
                 if p.poll() is not None:
                     print(f"process {p.args[0]} exited ({p.returncode})")
     except KeyboardInterrupt:
         pass
-    finally:
-        for p in procs:
-            p.terminate()
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    finally:
+        for p in procs:
+            if p.poll() is None:
+                p.terminate()
