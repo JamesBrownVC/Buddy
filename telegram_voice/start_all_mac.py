@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -22,7 +23,8 @@ import config  # loads the ignored local .env
 from security_utils import ensure_env_secret, set_env_value
 
 HERE = Path(__file__).resolve().parent
-PY = HERE / ".venv" / "bin" / "python"
+PY = Path(sys.executable)
+DASHBOARD = HERE.parent / "Buddy-frontend"
 CLOUDFLARED = shutil.which("cloudflared") or "/opt/homebrew/bin/cloudflared"
 URL_RE = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
 LOGS = HERE / "state"
@@ -38,7 +40,7 @@ def spawn(args: list[str], logname: str, **kw) -> subprocess.Popen:
     return p
 
 
-HERMES = Path.home() / ".local" / "bin" / "hermes"
+HERMES = Path(shutil.which("hermes") or Path.home() / ".local" / "bin" / "hermes")
 HERMES_BRAINS = [  # (profile, api port) — one Hermes instance per agent brain
     ("buddybrain", 8643),     # bookkeeper
     ("browserbrain", 8644),   # browser
@@ -53,6 +55,8 @@ HERMES_BRAINS = [  # (profile, api port) — one Hermes instance per agent brain
 
 def main() -> None:
     ensure_env_secret()
+    if not (DASHBOARD / "index.html").is_file():
+        raise SystemExit(f"Dashboard files are missing: {DASHBOARD}")
     bind_host = os.getenv("BUDDY_BIND_HOST", "127.0.0.1")
     public_tunnel = os.getenv("ENABLE_PUBLIC_TUNNEL", "0").lower() in {
         "1", "true", "yes"
@@ -76,17 +80,32 @@ def main() -> None:
         pass
     from net_agents.lifecycle import brain_env
     for profile, port in brains:
-        if (Path.home() / ".hermes" / "profiles" / profile).exists():
+        if (Path.home() / ".hermes" / "profiles" / profile).exists() and HERMES.is_file():
             # --replace clears stale/hijacked instances; brain_env strips the
             # Telegram token so the gateway runs api_server only (no bot conflict)
             spawn([str(HERMES), "-p", profile, "gateway", "run", "--replace"],
                   f"hermes-{profile}.log", env=brain_env())
         else:
-            print(f"      (profile {profile} missing — skipped)")
+            print(f"      (profile {profile} or Hermes executable missing — skipped)")
 
     print("[1/6] agent hub :8484")
     spawn([str(PY), "-m", "uvicorn", "agent_hub:app", "--host", bind_host,
            "--port", "8484"], "hub.log")
+
+    print("[1b/6] private dashboard :5500")
+    dashboard = spawn([str(PY), "-m", "http.server", "5500", "--bind",
+                       "127.0.0.1", "--directory", str(DASHBOARD)],
+                      "dashboard.log")
+    for _ in range(50):
+        if dashboard.poll() is not None:
+            raise SystemExit("Dashboard failed to start; see telegram_voice/state/dashboard.log")
+        try:
+            with socket.create_connection(("127.0.0.1", 5500), timeout=0.2):
+                break
+        except OSError:
+            time.sleep(0.1)
+    else:
+        raise SystemExit("Dashboard did not become available; see telegram_voice/state/dashboard.log")
 
     url = ""
     if public_tunnel:
@@ -153,16 +172,18 @@ def main() -> None:
     try:
         while True:
             time.sleep(5)
-            for p in procs:
+            for p in procs[:]:
                 if p.poll() is not None:
                     print(f"process {p.args} exited ({p.returncode})")
                     procs.remove(p)
     except KeyboardInterrupt:
         pass
-    finally:
-        for p in procs:
-            p.terminate()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    finally:
+        for p in procs:
+            if p.poll() is None:
+                p.terminate()
